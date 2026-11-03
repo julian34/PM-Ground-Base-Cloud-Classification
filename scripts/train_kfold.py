@@ -31,6 +31,11 @@ from sklearn.model_selection import StratifiedKFold
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+try:                                   # konsol Windows (cp1252) tak bisa cetak ± -> paksa UTF-8
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 from clouddensenet import config as C  # noqa: E402
 from clouddensenet import (  # noqa: E402
     CloudDenseNet, FocalLoss, apply_phase, evaluate, muat_imagenet, nolkan_input_nd,
@@ -196,6 +201,11 @@ def main():
                    "accum_steps": args.accum_steps, "batch_size": C.BATCH_SIZE,
                    "effective_batch": C.BATCH_SIZE * args.accum_steps, "seed": C.SEED,
                    "phases_cv": [list(p) for p in PHASES_CV]},
+        # Flag arsitektur/training yang dipakai run ini -> JSON self-documenting untuk ablasi.
+        "arch": {"USE_SE": C.USE_SE, "USE_SCCONV": C.USE_SCCONV, "USE_BR": C.USE_BR,
+                 "USE_BRANCH": C.USE_BRANCH, "STRONG_AUG": C.STRONG_AUG,
+                 "IMBALANCE": C.IMBALANCE, "FOCAL_GAMMA": C.FOCAL_GAMMA,
+                 "LABEL_SMOOTHING": C.LABEL_SMOOTHING, "MIXUP_P": C.MIXUP_P},
         "fold_best_f1": [float(f) for f in arr],
         "failed_folds": failed,
         "mean_f1": float(arr.mean()), "std_f1": float(arr.std()),
