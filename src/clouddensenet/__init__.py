@@ -1,0 +1,43 @@
+"""CloudDenseNet — DenseNet-121 termodifikasi untuk klasifikasi 7 kelas awan.
+
+Modifikasi utama vs DenseNet-121 standar:
+  * SEBlock (Squeeze-and-Excitation) pada bottleneck tiap DenseLayer & tiap block.
+  * SCConv — konvolusi cosine ter-normalisasi dengan skala τ per-channel.
+  * SpatialAttnBR — atensi spasial dengan channel λ rasio Biru/Merah (sadar-fisika).
+  * Top Block ringkas: GAP -> FC(1024->32) -> BN -> Dropout -> FC(32->7).
+  * Transfer learning ImageNet 5 tahap (freeze bertahap) + Focal Loss.
+"""
+from __future__ import annotations
+
+from . import config
+from .attention import EdgeLayer, SEBlock, SpatialAttn, SpatialAttnBR
+from .blocks import (
+    DenseBlock1, DenseBlock2, DenseBlock3, DenseBlock4,
+    DenseLayer, TopBlock, TransitionLayer1, TransitionLayer2, TransitionLayer3,
+)
+from .conv import SCConv
+from .data import build_loaders, build_transforms, set_seed, siapkan_batch
+from .engine import apply_phase, evaluate, phase_of, train_one_epoch
+from .finetune import bekukan_imagenet, buka_blok_3_4, buka_semua, set_bn_beku_eval
+from .losses import FocalLoss, init_new_layers, lecun_uniform_
+from .model import CloudDenseNet
+from .pretrained import muat_imagenet, nolkan_input_nd
+from .spectral import br_ratio_lambda, lambda_relatif, valid_mask
+from .tblog import catat_epoch, siapkan_tensorboard, tutup_tensorboard
+
+__all__ = [
+    "config",
+    "CloudDenseNet",
+    "DenseLayer", "DenseBlock1", "DenseBlock2", "DenseBlock3", "DenseBlock4",
+    "TransitionLayer1", "TransitionLayer2", "TransitionLayer3", "TopBlock",
+    "SEBlock", "SpatialAttn", "SpatialAttnBR", "EdgeLayer", "SCConv",
+    "FocalLoss", "init_new_layers", "lecun_uniform_",
+    "muat_imagenet", "nolkan_input_nd",
+    "bekukan_imagenet", "buka_blok_3_4", "buka_semua", "set_bn_beku_eval",
+    "build_loaders", "build_transforms", "set_seed", "siapkan_batch",
+    "train_one_epoch", "evaluate", "phase_of", "apply_phase",
+    "br_ratio_lambda", "lambda_relatif", "valid_mask",
+    "siapkan_tensorboard", "catat_epoch", "tutup_tensorboard",
+]
+
+__version__ = "0.1.0"

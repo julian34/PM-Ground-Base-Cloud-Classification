@@ -1,0 +1,29 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Data & artefak (jangan di-commit, bisa besar)
+data/raw/
+data/processed/
+artifacts/checkpoints/
+artifacts/results/
+artifacts/runs/
+*.pth
+*.pt
+
+# Folder cadangan — jangan disentuh/commit
+Backup/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
