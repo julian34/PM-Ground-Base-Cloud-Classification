@@ -27,17 +27,20 @@ def mixup_batch(x01, y):
     return w * x01 + (1 - w) * x01[perm], y[perm], w
 
 
-def phase_of(epoch):
-    return next((i for i, p in enumerate(PHASES, 1) if epoch <= p[0]), len(PHASES))
+def phase_of(epoch, phases=PHASES):
+    """Nomor fase (1..n) untuk sebuah epoch. `phases` dapat diganti jadwal lain
+    (mis. PHASES_CV terkompresi untuk cross-validation)."""
+    return next((i for i, p in enumerate(phases, 1) if epoch <= p[0]), len(phases))
 
 
-def apply_phase(model, optimizer, phase):
-    strategi = PHASES[phase - 1][2]
+def apply_phase(model, optimizer, phase, phases=PHASES):
+    """Terapkan strategi pembekuan + LR fase. `phases` default = config.PHASES."""
+    strategi = phases[phase - 1][2]
     if   strategi == "frozen":  bekukan_imagenet(model)
     elif strategi == "partial": buka_blok_3_4(model)
     else:                       buka_semua(model)
     for grp in optimizer.param_groups:
-        grp["lr"] = PHASES[phase - 1][1]  # LR = field ke-2
+        grp["lr"] = phases[phase - 1][1]  # LR = field ke-2
 
 
 def _bn_buffers(model):
@@ -64,9 +67,18 @@ def lacak_nonfinite(model, x, lam, device):
     return temuan[0] if temuan else "forward bersih (NaN di loss)"
 
 
-def _langkah_optimizer(scaler, optimizer, model):
-    """Satu langkah optimizer AMP: unscale -> clip -> step -> update -> zero_grad."""
+def _langkah_optimizer(scaler, optimizer, model, grad_scale=1.0):
+    """Satu langkah optimizer AMP: unscale -> (koreksi) -> clip -> step -> update -> zero_grad.
+
+    grad_scale != 1.0 untuk mengoreksi window akumulasi parsial di akhir epoch: tiap
+    mikro-batch sudah dibagi accum_steps, jadi window berisi `pending` (< accum_steps)
+    mikro-batch perlu dikali accum_steps/pending agar setara rata-rata window.
+    """
     scaler.unscale_(optimizer)
+    if grad_scale != 1.0:
+        for p in model.parameters():
+            if p.grad is not None:
+                p.grad.mul_(grad_scale)
     nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
     scaler.step(optimizer)
     scaler.update()
@@ -124,7 +136,7 @@ def train_one_epoch(model, loader, optimizer, scaler, criterion, device,
             writer.add_scalar("LR_step", optimizer.param_groups[0]["lr"], step)
             writer.flush()
     if pending > 0:                                               # sisa mikro-batch di akhir epoch
-        _langkah_optimizer(scaler, optimizer, model)
+        _langkah_optimizer(scaler, optimizer, model, grad_scale=accum_steps / pending)
     return total_loss / max(n, 1), correct / max(n, 1)
 
 

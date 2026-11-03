@@ -33,17 +33,18 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from clouddensenet import config as C  # noqa: E402
 from clouddensenet import (  # noqa: E402
-    CloudDenseNet, FocalLoss, evaluate, muat_imagenet, nolkan_input_nd, set_seed,
-    train_one_epoch,
+    CloudDenseNet, FocalLoss, apply_phase, evaluate, muat_imagenet, nolkan_input_nd,
+    phase_of, set_seed, train_one_epoch,
 )
 from clouddensenet.data import siapkan_batch  # noqa: E402
-from clouddensenet.data_kfold import base_targets, build_fold_loaders  # noqa: E402
+from clouddensenet.data_kfold import build_base_datasets, build_fold_loaders  # noqa: E402
 from clouddensenet.engine import is_finite  # noqa: E402
-from clouddensenet.finetune import bekukan_imagenet, buka_blok_3_4, buka_semua  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # Jadwal CV: 6 fase PHASES dikompresi proporsional 80 -> 30 epoch.
 # LR & strategi dipertahankan; hanya panjang tiap fase dipadatkan (4·4·4·4·7·7).
+# Dipakai lewat engine.phase_of/apply_phase dengan argumen `phases=PHASES_CV`
+# (satu sumber logika pembekuan — tidak menduplikasi engine).
 # Batas kumulatif (epoch_akhir, lr, strategi, deskripsi):
 # --------------------------------------------------------------------------- #
 PHASES_CV = [
@@ -55,24 +56,6 @@ PHASES_CV = [
     (30, 1e-6, "full",    "Full Defrost (end-to-end)"),      # ep 24-30
 ]
 EPOCHS_CV = PHASES_CV[-1][0]
-
-
-def phase_of_cv(epoch, phases=PHASES_CV):
-    """Nomor fase (1..n) untuk sebuah epoch pada jadwal CV."""
-    return next((i for i, p in enumerate(phases, 1) if epoch <= p[0]), len(phases))
-
-
-def apply_phase_cv(model, optimizer, phase, phases=PHASES_CV):
-    """Terapkan pembekuan + LR fase CV (meniru engine.apply_phase, tanpa global)."""
-    strategi = phases[phase - 1][2]
-    if strategi == "frozen":
-        bekukan_imagenet(model)
-    elif strategi == "partial":
-        buka_blok_3_4(model)
-    else:
-        buka_semua(model)
-    for grp in optimizer.param_groups:
-        grp["lr"] = phases[phase - 1][1]
 
 
 @torch.no_grad()
@@ -90,10 +73,15 @@ def predict_loader(model, loader, device):
     return np.concatenate(yt), np.concatenate(yp)
 
 
-def train_one_fold(fold, data_root, device, train_idx, val_idx, run_name, accum_steps):
-    """Satu training penuh (jadwal CV) pada satu fold. Kembalikan (best_f1, val_loader, model)."""
+def train_one_fold(fold, base_train, base_val, device, train_idx, val_idx, run_name, accum_steps):
+    """Satu training penuh (jadwal CV) pada satu fold.
+
+    Kembalikan (best_f1, val_loader, model). `model` sudah DIMUAT ULANG dari checkpoint
+    terbaik (epoch dengan val-F1 tertinggi) agar OOF konsisten dengan skor per-fold —
+    bukan bobot epoch terakhir. best_f1 < 0 menandai fold gagal (loss NaN tanpa checkpoint).
+    """
     set_seed(C.SEED)   # model & sampler identik tiap fold -> yang berbeda hanya split data
-    train_loader, val_loader, _, _ = build_fold_loaders(data_root, device, train_idx, val_idx)
+    train_loader, val_loader, _, _ = build_fold_loaders(base_train, base_val, device, train_idx, val_idx)
 
     model = nolkan_input_nd(muat_imagenet(CloudDenseNet().to(device)))
     criterion = FocalLoss() if C.FOCAL_GAMMA > 0 else torch.nn.CrossEntropyLoss()
@@ -104,9 +92,9 @@ def train_one_fold(fold, data_root, device, train_idx, val_idx, run_name, accum_
     best_f1, current_phase = -1.0, 0
 
     for epoch in range(1, EPOCHS_CV + 1):
-        phase = phase_of_cv(epoch)
+        phase = phase_of(epoch, PHASES_CV)
         if phase != current_phase:
-            apply_phase_cv(model, optimizer, phase)
+            apply_phase(model, optimizer, phase, PHASES_CV)
             current_phase = phase
             print(f"  [fold {fold}] ep {epoch:02d}: fase {phase} - {PHASES_CV[phase-1][3]} "
                   f"| lr {PHASES_CV[phase-1][1]:g}")
@@ -123,6 +111,9 @@ def train_one_fold(fold, data_root, device, train_idx, val_idx, run_name, accum_
             best_f1 = va_f1
             torch.save({"epoch": epoch, "model": model.state_dict(), "best_f1": best_f1}, ckpt)
 
+    # OOF harus dari model TERBAIK (bukan epoch terakhir): muat ulang checkpoint terbaik.
+    if best_f1 >= 0 and ckpt.exists():
+        model.load_state_dict(torch.load(ckpt, map_location=device)["model"])
     return best_f1, val_loader, model
 
 
@@ -148,31 +139,40 @@ def main():
     C.CKPT_DIR.mkdir(parents=True, exist_ok=True)
     C.RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
-    targets, classes = base_targets(args.data_root)
+    # Dua ImageFolder dibangun SEKALI, dipakai ulang lintas fold (hemat I/O).
+    base_train, base_val, targets, classes = build_base_datasets(args.data_root)
     print(f"Pool train: {len(targets)} citra | {len(classes)} kelas: {classes}")
 
     # shuffle=True + random_state=SEED -> fold deterministik & reproducible (konsisten SEED=42).
     skf = StratifiedKFold(n_splits=args.folds, shuffle=True, random_state=C.SEED)
     X_dummy = np.zeros(len(targets))        # StratifiedKFold hanya butuh label (y)
 
-    fold_f1, splits = [], list(skf.split(X_dummy, targets))
+    fold_f1, failed = [], []
     oof_true = np.full(len(targets), -1, dtype=np.int64)   # prediksi out-of-fold
     oof_pred = np.full(len(targets), -1, dtype=np.int64)
 
     t_all = time.time()
-    for fold, (tr_idx, va_idx) in enumerate(splits):
+    for fold, (tr_idx, va_idx) in enumerate(skf.split(X_dummy, targets)):
         dist = np.bincount(targets[va_idx], minlength=len(classes)).tolist()
         print(f"\n=== Fold {fold}/{args.folds - 1} | train {len(tr_idx)} val {len(va_idx)} "
               f"| dist val per-kelas: {dist}")
         t0 = time.time()
         best_f1, val_loader, model = train_one_fold(
-            fold, args.data_root, device, tr_idx, va_idx, args.run_name, args.accum_steps)
-        fold_f1.append(best_f1)
+            fold, base_train, base_val, device, tr_idx, va_idx, args.run_name, args.accum_steps)
 
-        yt, yp = predict_loader(model, val_loader, device)        # OOF pada fold ini
+        if best_f1 < 0:   # fold gagal (NaN tanpa checkpoint) -> jangan cemari agregat/OOF
+            failed.append(fold)
+            print(f"=== Fold {fold} GAGAL (loss NaN) — dilewati dari agregat & OOF")
+            continue
+
+        fold_f1.append(best_f1)
+        yt, yp = predict_loader(model, val_loader, device)        # OOF dari model terbaik fold ini
         oof_true[va_idx] = yt
         oof_pred[va_idx] = yp
         print(f"=== Fold {fold} selesai | best val f1 {best_f1:.4f} | {time.time()-t0:.0f}s")
+
+    if not fold_f1:
+        raise SystemExit("Semua fold gagal (NaN) — tidak ada hasil untuk diagregasi.")
 
     arr = np.array(fold_f1)
     mask = oof_pred >= 0
@@ -182,6 +182,8 @@ def main():
     print(f"Hasil {args.folds}-Fold Stratified CV (macro-F1), jadwal {EPOCHS_CV} epoch:")
     for i, f in enumerate(arr):
         print(f"  fold {i}: {f:.4f}")
+    if failed:
+        print(f"  (fold gagal/dilewati: {failed})")
     print("  " + "-" * 34)
     print(f"  F1 = {arr.mean():.4f} ± {arr.std():.4f}   (mean ± std antar-fold)")
     print(f"  OOF macro-F1 (gabungan semua fold) = {oof_macro:.4f}")
@@ -195,6 +197,7 @@ def main():
                    "effective_batch": C.BATCH_SIZE * args.accum_steps, "seed": C.SEED,
                    "phases_cv": [list(p) for p in PHASES_CV]},
         "fold_best_f1": [float(f) for f in arr],
+        "failed_folds": failed,
         "mean_f1": float(arr.mean()), "std_f1": float(arr.std()),
         "oof_macro_f1": oof_macro, "classes": classes,
     }

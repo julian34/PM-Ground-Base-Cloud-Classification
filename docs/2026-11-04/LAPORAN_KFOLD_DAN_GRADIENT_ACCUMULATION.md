@@ -35,7 +35,7 @@ jalan persis seperti sebelumnya selama `ACCUM_STEPS = 1`.
 |------|-------|-----|
 | `src/clouddensenet/config.py` | diubah | tambah knob `ACCUM_STEPS = 1` (Gradient Accumulation) |
 | `src/clouddensenet/engine.py` | diubah | `train_one_epoch(..., accum_steps=1)` + helper `_langkah_optimizer` |
-| `src/clouddensenet/data_kfold.py` | **baru** | `base_targets()`, `build_fold_loaders()` untuk K-fold |
+| `src/clouddensenet/data_kfold.py` | **baru** | `build_base_datasets()`, `build_fold_loaders()` untuk K-fold |
 | `scripts/train.py` | diubah | teruskan `C.ACCUM_STEPS` ke loop training + info batch efektif |
 | `scripts/train_kfold.py` | **baru** | entrypoint CV: `StratifiedKFold` + jadwal `PHASES_CV` + OOF |
 | `docs/STRATIFIED_KFOLD_CV.md` | sudah ada | dokumen konsep & desain (pendamping laporan ini) |
@@ -281,5 +281,7 @@ rasio-epoch ini valid karena kompresi mempertahankan proporsi fase (porsi `full`
 - `docs/EDA_AUGMENTASI.md` — sumber angka distribusi kelas train.
 - `src/clouddensenet/config.py` — sumber kebenaran hyperparameter (`ACCUM_STEPS`,
   `PHASES`, `SEED`, `VAL_SPLIT`, `IMBALANCE`).
-- `scripts/train_kfold.py` — entrypoint CV (`PHASES_CV`, `phase_of_cv`, OOF).
-- `src/clouddensenet/engine.py` — `train_one_epoch(accum_steps=...)`.
+- `scripts/train_kfold.py` — entrypoint CV (`PHASES_CV` dipakai lewat
+  `engine.phase_of/apply_phase(..., phases=PHASES_CV)`, reload checkpoint terbaik untuk OOF).
+- `src/clouddensenet/engine.py` — `train_one_epoch(accum_steps=...)`,
+  `phase_of/apply_phase(phases=PHASES)`.

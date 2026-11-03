@@ -5,8 +5,9 @@ Membangun loader train/val untuk SATU fold dari indeks `StratifiedKFold`
 `train/` yang sama — satu dengan augmentasi (train), satu polos (val) — sehingga
 indeks kedua dataset sejajar (urutan ImageFolder = `sorted`, deterministik).
 
-K-fold berjalan HANYA di pool `train/`. Folder `test/` tetap holdout final dan
-tidak pernah tersentuh selama CV.
+Kedua `ImageFolder` dibangun SEKALI (`build_base_datasets`) lalu dipakai ulang lintas
+fold; tiap fold hanya mengganti indeks `Subset`, menghindari pemindaian direktori
+berulang. K-fold berjalan HANYA di pool `train/`; folder `test/` tetap holdout final.
 """
 from __future__ import annotations
 
@@ -21,33 +22,33 @@ from .config import (
 from .data import build_transforms, seed_worker
 
 
-def base_targets(data_root):
-    """Label kelas seluruh pool train/ + nama kelas.
+def build_base_datasets(data_root):
+    """Bangun dua ImageFolder pada train/ SEKALI: (augmentasi, polos).
 
-    Tanpa transform (hanya baca label) agar cepat. Dipakai `StratifiedKFold` untuk
-    menentukan fold; indeks yang dihasilkan sejajar dengan ImageFolder ber-transform
-    karena urutannya sama-sama `sorted`.
+    Mengembalikan (base_train, base_val, targets, classes). `targets` dan urutan
+    sampel identik untuk keduanya (root sama, `sorted`), jadi indeks fold sejajar.
+    Dipakai `StratifiedKFold` (lewat `targets`) dan `build_fold_loaders` (lewat
+    base_train/base_val) tanpa memindai ulang direktori tiap fold.
     """
-    base = ImageFolder(root=str(data_root / "train"))
-    return np.asarray(base.targets), base.classes
+    train_tf, val_tf = build_transforms()
+    base_train = ImageFolder(root=str(data_root / "train"), transform=train_tf)
+    base_val = ImageFolder(root=str(data_root / "train"), transform=val_tf)
+    targets = np.asarray(base_train.targets)
+    return base_train, base_val, targets, base_val.classes
 
 
-def build_fold_loaders(data_root, device, train_idx, val_idx):
-    """Loader train & val untuk satu fold dari indeks StratifiedKFold.
+def build_fold_loaders(base_train, base_val, device, train_idx, val_idx):
+    """Loader train & val untuk satu fold dari dataset dasar yang sudah dibangun.
 
-    - train_tf (augmentasi) untuk subset latih, val_tf (polos) untuk subset validasi.
+    - base_train (augmentasi) untuk subset latih, base_val (polos) untuk subset validasi.
     - WeightedRandomSampler dihitung ULANG dari distribusi kelas train fold ini
       (jangan pakai bobot global — tiap fold distribusinya sedikit berbeda).
     """
-    train_tf, val_tf = build_transforms()
     g = torch.Generator().manual_seed(SEED)
     pin = (device.type == "cuda")
 
     train_idx = np.asarray(train_idx)
     val_idx = np.asarray(val_idx)
-
-    base_train = ImageFolder(root=str(data_root / "train"), transform=train_tf)
-    base_val = ImageFolder(root=str(data_root / "train"), transform=val_tf)
 
     train_ds = Subset(base_train, train_idx.tolist())
     val_ds = Subset(base_val, val_idx.tolist())
