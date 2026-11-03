@@ -8,7 +8,15 @@ Path default menunjuk ke folder `data/` dan `artifacts/` di root proyek.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+
+def _env_bool(name, default):
+    """Override boolean dari environment variable (untuk skrip ablasi otomatis).
+    Env tak diset -> pakai default (perilaku & reproducibility lama tetap terjaga)."""
+    v = os.environ.get(name)
+    return default if v is None else v.strip().lower() in ("1", "true", "yes", "on")
 
 # --------------------------------------------------------------------------- #
 # Mode & reproducibility
@@ -48,7 +56,7 @@ CLASS_NAMES = [
 USE_SE = True
 USE_SCCONV = True
 USE_BRANCH = False
-USE_BR = True
+USE_BR = _env_bool("CDN_USE_BR", True)      # dapat di-override env untuk ablasi (lihat run_ablation.ps1)
 BRANCH_PAPER = False
 ND_CH = 8
 LAM_SCALE = 10.0
@@ -80,7 +88,7 @@ ACCUM_STEPS = 1
 # --------------------------------------------------------------------------- #
 GROUPED_SPLIT = False
 GROUP_THR = 0.95
-STRONG_AUG = False
+STRONG_AUG = _env_bool("CDN_STRONG_AUG", False)   # dapat di-override env untuk ablasi
 LABEL_SMOOTHING = 0.0
 MIXUP_P = 0.0
 MIXUP_ALPHA = 0.2
