@@ -69,6 +69,12 @@ WEIGHT_DECAY = 1e-2
 FOCAL_GAMMA = 2.0        # faktor fokus γ (Lin et al., 2017)
 GRAD_CLIP = 5.0          # batas norma gradien
 
+# Gradient Accumulation — akumulasi gradien beberapa mikro-batch sebelum satu
+# langkah optimizer. Efektif saat VRAM terbatas: batch efektif = BATCH_SIZE x
+# ACCUM_STEPS tanpa menambah memori puncak. Naikkan saat OOM, terutama di fase
+# 'full' (defrost end-to-end) yang paling boros VRAM. 1 = nonaktif (perilaku lama).
+ACCUM_STEPS = 1
+
 # --------------------------------------------------------------------------- #
 # Perbaikan generalisasi (v2)
 # --------------------------------------------------------------------------- #

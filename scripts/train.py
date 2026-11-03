@@ -60,6 +60,9 @@ def main():
     train_loader, val_loader, train_ds, val_ds = build_loaders(args.data_root, device)
     classes = getattr(val_ds, "classes", C.CLASS_NAMES)
     print(f"Kelas ({len(classes)}): {classes}")
+    if C.ACCUM_STEPS > 1:
+        print(f"Gradient Accumulation: {C.ACCUM_STEPS} langkah -> "
+              f"batch efektif {C.BATCH_SIZE * C.ACCUM_STEPS} (mikro-batch {C.BATCH_SIZE})")
 
     model = CloudDenseNet().to(device)
     model = muat_imagenet(model)
@@ -101,7 +104,7 @@ def main():
 
         t0 = time.time()
         tr_loss, tr_acc = train_one_epoch(model, train_loader, optimizer, scaler, criterion, device,
-                                          writer=writer, epoch=epoch)
+                                          writer=writer, epoch=epoch, accum_steps=C.ACCUM_STEPS)
         va_loss, va_acc, va_f1 = evaluate(model, val_loader, criterion, device)
 
         if not is_finite(tr_loss, va_loss):

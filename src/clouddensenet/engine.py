@@ -64,12 +64,29 @@ def lacak_nonfinite(model, x, lam, device):
     return temuan[0] if temuan else "forward bersih (NaN di loss)"
 
 
+def _langkah_optimizer(scaler, optimizer, model):
+    """Satu langkah optimizer AMP: unscale -> clip -> step -> update -> zero_grad."""
+    scaler.unscale_(optimizer)
+    nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
+    scaler.step(optimizer)
+    scaler.update()
+    optimizer.zero_grad(set_to_none=True)
+
+
 def train_one_epoch(model, loader, optimizer, scaler, criterion, device,
-                    writer=None, epoch=1, log_every=50):
+                    writer=None, epoch=1, log_every=50, accum_steps=1):
+    """Satu epoch training. accum_steps>1 = Gradient Accumulation: gradien dari
+    `accum_steps` mikro-batch diakumulasi sebelum satu langkah optimizer, sehingga
+    batch efektif = BATCH_SIZE x accum_steps tanpa menaikkan memori puncak.
+    accum_steps=1 identik dengan perilaku lama (step tiap batch).
+    """
+    accum_steps = max(1, int(accum_steps))
     model.train()
     set_bn_beku_eval(model)
     bn = _bn_buffers(model)
     total_loss, correct, n, n_skip = 0.0, 0, 0, 0
+    pending = 0                                                   # mikro-batch terakumulasi
+    optimizer.zero_grad(set_to_none=True)
     for i, (x01, y) in enumerate(tqdm(loader, desc="Train", leave=False)):
         if DEBUG and i >= DEBUG_BATCHES:
             break
@@ -79,7 +96,6 @@ def train_one_epoch(model, loader, optimizer, scaler, criterion, device,
             x01, y_b, w = mixup_batch(x01, y)                      # MixUp pada gambar mentah
         x, lam = siapkan_batch(x01, device)                        # normalisasi + peta λ B/R
         backup = [b.clone() for b in bn]
-        optimizer.zero_grad(set_to_none=True)
         with torch.autocast(device_type=device.type, dtype=torch.float16,
                             enabled=(device.type == "cuda")):
             out = model(x, lam)
@@ -93,11 +109,12 @@ def train_one_epoch(model, loader, optimizer, scaler, criterion, device,
             if n_skip > 20:
                 raise RuntimeError("Terlalu banyak batch NaN — periksa modul sumbernya")
             continue
-        scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
-        scaler.step(optimizer)
-        scaler.update()
+        # Bagi dengan accum_steps agar gradien terakumulasi = rata-rata batch efektif.
+        scaler.scale(loss / accum_steps).backward()
+        pending += 1
+        if pending == accum_steps:                                # batas akumulasi -> step
+            _langkah_optimizer(scaler, optimizer, model)
+            pending = 0
         total_loss += loss.item() * x.size(0)
         correct += (out.argmax(1) == y).sum().item()
         n += x.size(0)
@@ -106,6 +123,8 @@ def train_one_epoch(model, loader, optimizer, scaler, criterion, device,
             writer.add_scalar("Loss/train_step", loss.item(), step)
             writer.add_scalar("LR_step", optimizer.param_groups[0]["lr"], step)
             writer.flush()
+    if pending > 0:                                               # sisa mikro-batch di akhir epoch
+        _langkah_optimizer(scaler, optimizer, model)
     return total_loss / max(n, 1), correct / max(n, 1)
 
 
