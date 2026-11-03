@@ -45,6 +45,11 @@ Write-Host "Python  : $Py"
 Write-Host "Folds   : $Folds | AccumSteps: $AccumSteps"
 Write-Host "Results : $Results`n"
 
+# PS 5.1: stderr dari exe native (mis. progress bar tqdm) dibungkus jadi ErrorRecord.
+# Dengan EAP=Stop itu akan menghentikan skrip di tulisan stderr pertama (NativeCommandError).
+# Turunkan ke Continue; kegagalan nyata tetap dideteksi lewat $LASTEXITCODE di bawah.
+$ErrorActionPreference = "Continue"
+
 # Definisi 3 run (nama + nilai env flag)
 $Runs = @(
     @{ name = "baseline"; br = "1"; aug = "0" },
