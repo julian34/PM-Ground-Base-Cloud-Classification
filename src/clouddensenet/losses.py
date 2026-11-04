@@ -34,7 +34,14 @@ def lecun_uniform_(tensor):
 
 
 def init_new_layers(m):
-    """Hanya untuk lapisan BARU (SE, cabang B1, Top Block). Jangan .apply ke seluruh model."""
+    """Init LeCun-uniform untuk lapisan BARU: Top Block & cabang ND (pq).
+
+    Terapkan lewat `module.apply(init_new_layers)` HANYA ke submodul baru —
+    JANGAN ke seluruh model (akan menimpa bobot ImageNet backbone). SEBlock &
+    SpatialAttnBR juga JANGAN dikirim ke sini: keduanya sudah di-init mendekati
+    identitas (bobot nol + bias 3.0) di konstruktornya, dan init ini akan
+    merusaknya. Lihat `model.CloudDenseNet._init_lapisan_baru`.
+    """
     if isinstance(m, (nn.Linear, nn.Conv2d)):
         lecun_uniform_(m.weight)
         if m.bias is not None:

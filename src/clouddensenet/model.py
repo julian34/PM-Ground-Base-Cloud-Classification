@@ -15,6 +15,7 @@ from .blocks import (
     TopBlock, TransitionLayer1, TransitionLayer2, TransitionLayer3,
 )
 from .config import ND_CH, NUM_CLASSES, USE_SE
+from .losses import init_new_layers
 
 
 class CloudDenseNet(nn.Module):
@@ -51,6 +52,26 @@ class CloudDenseNet(nn.Module):
 
         # ===== Top Block =====
         self.top = TopBlock()
+
+        # Init LeCun-uniform untuk lapisan BARU (lihat losses.init_new_layers).
+        self._init_lapisan_baru()
+
+    def _init_lapisan_baru(self):
+        """Terapkan init LeCun-uniform HANYA ke lapisan baru: Top Block + cabang ND (pq).
+
+        Yang sengaja DILEWATI:
+          * SEBlock & SpatialAttnBR — sudah di-init mendekati identitas di
+            konstruktornya (bobot nol + bias 3.0); menimpanya merusak desain
+            'atensi awal ≈ identitas'.
+          * Backbone (stem, DenseLayer.h/conv, transisi) — pada jalur training
+            (train.py) bobotnya ditimpa bobot ImageNet via `muat_imagenet`; saat
+            dibangun tanpa itu (test / latih-dari-nol) tetap pakai init default.
+        """
+        self.top.apply(init_new_layers)
+        for b in range(1, 5):
+            for layer in getattr(self, f"block{b}").layers:
+                if layer.pq is not None:                 # cabang ND (P/Q) — lapisan baru
+                    init_new_layers(layer.pq)
 
     def forward(self, x, lam=None, return_all=False):
         s = self.maxpool(self.relu(self.bn(self.conv(x))))        # (B, 64, 56, 56)
