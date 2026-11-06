@@ -16,6 +16,7 @@ data/processed/
 artifacts/checkpoints/
 artifacts/results/
 artifacts/runs/
+artifacts/onnx/
 *.pth
 *.pt
 

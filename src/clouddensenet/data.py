@@ -126,6 +126,24 @@ def build_loaders(data_root, device):
     return train_loader, val_loader, train_dataset, val_dataset
 
 
+def build_test_loader(data_root, device):
+    """Bangun test_loader dari <data_root>/test (ImageFolder). None bila folder tak ada.
+
+    Dipakai untuk evaluasi akhir & confusion matrix pada data uji yang benar-benar
+    held-out. Transform sama dengan val (tanpa augmentasi), normalisasi di siapkan_batch.
+    """
+    test_dir = data_root / "test"
+    if not test_dir.is_dir():
+        print(f"[data] folder test/ tidak ada di {test_dir} -> lewati evaluasi test")
+        return None, None
+    _, val_tf = build_transforms()
+    test_dataset = ImageFolder(root=str(test_dir), transform=val_tf)
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False,
+                             num_workers=NUM_WORKERS, pin_memory=(device.type == "cuda"),
+                             persistent_workers=NUM_WORKERS > 0)
+    return test_loader, test_dataset
+
+
 @torch.no_grad()
 def siapkan_batch(x01, device):
     """x01 [B,3,H,W] di [0,1] -> (x ternormalisasi, λ [B,1,H,W] atau None)."""

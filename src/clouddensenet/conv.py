@@ -29,6 +29,7 @@ class SCConv(nn.Module):
             x = F.pad(x.float(), (self.padding,) * 4, mode="reflect")
             w = self.weight.float()
             k = w.shape[-1]
+            k = int(k)                       # konstanta; aman utk tracing ONNX
             dot = F.conv2d(x, w, stride=self.stride)
             # ||x|| per patch = jumlah x² lintas channel, lalu jumlah jendela k×k.
             sq = x.pow(2).sum(1, keepdim=True)

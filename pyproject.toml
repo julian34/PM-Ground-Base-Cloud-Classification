@@ -24,6 +24,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# Ekspor model ke ONNX (untuk Zetane Viewer / Netron) — lihat scripts/export_onnx.py
+export = ["onnx>=1.16"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

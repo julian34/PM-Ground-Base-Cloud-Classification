@@ -21,9 +21,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from clouddensenet import config as C  # noqa: E402
 from clouddensenet import (  # noqa: E402
-    CloudDenseNet, FocalLoss, apply_phase, build_loaders, catat_epoch, evaluate,
-    muat_imagenet, nolkan_input_nd, phase_of, set_seed, siapkan_tensorboard,
-    train_one_epoch, tutup_tensorboard,
+    CloudDenseNet, FocalLoss, apply_phase, build_loaders, build_test_loader,
+    catat_epoch, evaluate, muat_imagenet, nolkan_input_nd, phase_of, set_seed,
+    siapkan_tensorboard, train_one_epoch, tutup_tensorboard,
 )
 from clouddensenet.engine import is_finite  # noqa: E402
 from clouddensenet.viz import plot_confusion_matrix, plot_training_history  # noqa: E402
@@ -127,8 +127,25 @@ def main():
 
     if history["train_loss"]:
         plot_training_history(history, simpan=str(C.RESULT_DIR / f"{args.run_name}_kurva.png"))
-        plot_confusion_matrix(model, val_loader, device,
+
+        # Confusion matrix dibuat dari model TERBAIK (checkpoint f1 tertinggi),
+        # bukan state epoch terakhir, agar cocok dengan performa yang dilaporkan.
+        if ckpt_path.exists():
+            best = torch.load(ckpt_path, map_location=device, weights_only=False)
+            model.load_state_dict(best["model"])
+            print(f"[eval] muat model terbaik {ckpt_path.name} (f1={best.get('best_f1', float('nan')):.4f})")
+
+        # 1. Confusion matrix pada data VALIDASI
+        print("[eval] confusion matrix — validasi")
+        plot_confusion_matrix(model, val_loader, device, classes=classes,
                               simpan=str(C.RESULT_DIR / f"{args.run_name}_cm_val.png"))
+
+        # 2. Confusion matrix pada data TEST (held-out <data_root>/test)
+        test_loader, _ = build_test_loader(args.data_root, device)
+        if test_loader is not None:
+            print("[eval] confusion matrix — test")
+            plot_confusion_matrix(model, test_loader, device, classes=classes,
+                                  simpan=str(C.RESULT_DIR / f"{args.run_name}_cm_test.png"))
 
     tutup_tensorboard(writer)
 
