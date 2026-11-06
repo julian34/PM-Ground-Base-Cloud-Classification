@@ -126,11 +126,34 @@ def build_loaders(data_root, device):
     return train_loader, val_loader, train_dataset, val_dataset
 
 
-def build_test_loader(data_root, device):
+def _stratified_subset_indices(targets, per_class, seed=SEED):
+    """Pilih `per_class` indeks per kelas secara stratified (seeded, reproducible).
+
+    Bila suatu kelas punya < per_class citra, ambil semua yang ada (tidak error)
+    dan beri peringatan. Dipakai untuk subset evaluasi test yang seimbang antar-kelas.
+    """
+    targets = np.asarray(targets)
+    rng = np.random.default_rng(seed)
+    idx_terpilih = []
+    for c in np.unique(targets):
+        idx = np.where(targets == c)[0]
+        rng.shuffle(idx)
+        n_ambil = min(per_class, len(idx))
+        if n_ambil < per_class:
+            print(f"[data] kelas {c}: hanya {len(idx)} citra (< {per_class}) -> ambil semua")
+        idx_terpilih.extend(idx[:n_ambil].tolist())
+    return sorted(idx_terpilih)
+
+
+def build_test_loader(data_root, device, per_class=None):
     """Bangun test_loader dari <data_root>/test (ImageFolder). None bila folder tak ada.
 
     Dipakai untuk evaluasi akhir & confusion matrix pada data uji yang benar-benar
     held-out. Transform sama dengan val (tanpa augmentasi), normalisasi di siapkan_batch.
+
+    Bila `per_class` diisi (mis. 300), test set disaring jadi subset stratified
+    `per_class` citra per kelas (seeded `SEED`), seimbang antar-kelas. Default `None`
+    memakai seluruh test set apa adanya.
     """
     test_dir = data_root / "test"
     if not test_dir.is_dir():
@@ -138,6 +161,15 @@ def build_test_loader(data_root, device):
         return None, None
     _, val_tf = build_transforms()
     test_dataset = ImageFolder(root=str(test_dir), transform=val_tf)
+
+    if per_class is not None:
+        idx = _stratified_subset_indices(test_dataset.targets, per_class)
+        classes = test_dataset.classes
+        test_dataset = Subset(test_dataset, idx)
+        test_dataset.classes = classes          # agar viz bisa baca nama kelas
+        print(f"[data] subset test stratified: {len(idx)} citra "
+              f"({per_class}/kelas, seed={SEED})")
+
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False,
                              num_workers=NUM_WORKERS, pin_memory=(device.type == "cuda"),
                              persistent_workers=NUM_WORKERS > 0)

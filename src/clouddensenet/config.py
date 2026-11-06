@@ -56,7 +56,7 @@ LAM_SCALE = 10.0
 SE_REDUCTION = 16        # rasio reduksi r (Hu et al., 2018)
 SE_INIT_BIAS = 3.0       # sigmoid(3) ≈ 0.953 -> SE awal mendekati identitas
 P_DROP = 0.8             # dropout cabang Block 1
-P_DROP_TOP = 0.5         # dropout Top Block
+P_DROP_TOP = 0.8         # dropout Top Block
 FUSION_ALPHA_INIT = 1.0
 TOP_POOL = 7
 TOP_DIMS = [TOP_POOL * TOP_POOL * 1024, 632, 512, 32]
@@ -89,6 +89,7 @@ PHASES = [
     (20, 1e-4, "frozen",  "Tahap 2 (bobot ImageNet beku)"),
     (30, 1e-5, "partial", "Adaptasi Top Block"),
     (40, 5e-5, "partial", "Unfreeze Dense Block 3-4"),
+    (45, 1e-5, "partial", "Unfreeze Dense Block 3-4 (LR 1e-5)"),
     (60, 1e-5, "full",    "Partial Fine-Tuning Optimization"),
     (80, 1e-6, "full",    "Full Defrost (end-to-end)"),
 ]

@@ -36,6 +36,9 @@ def parse_args():
     p.add_argument("--run-name", default=C.RUN_NAME)
     p.add_argument("--resume", action="store_true", default=True)
     p.add_argument("--no-resume", dest="resume", action="store_false")
+    p.add_argument("--test-per-class", type=int, default=None,
+                   help="Selain evaluasi test penuh, evaluasi juga subset stratified "
+                        "N citra per kelas (mis. 300) untuk pembanding. Default: hanya penuh.")
     return p.parse_args()
 
 
@@ -145,12 +148,23 @@ def main():
         plot_confusion_matrix(model, val_loader, device, classes=classes,
                               simpan=str(C.RESULT_DIR / f"{args.run_name}_cm_val.png"))
 
-        # 2. Confusion matrix pada data TEST (held-out <data_root>/test)
+        # 2. Confusion matrix pada data TEST penuh (held-out <data_root>/test, 9000 citra)
         test_loader, _ = build_test_loader(args.data_root, device)
         if test_loader is not None:
-            print("[eval] confusion matrix — test")
+            print("[eval] confusion matrix — test penuh")
             plot_confusion_matrix(model, test_loader, device, classes=classes,
                                   simpan=str(C.RESULT_DIR / f"{args.run_name}_cm_test.png"))
+
+        # 3. (opsional) Confusion matrix pada subset test stratified N/kelas — pembanding.
+        #    Test penuh di atas tetap dijalankan; ini evaluasi TAMBAHAN, bukan pengganti.
+        if args.test_per_class is not None:
+            sub_loader, _ = build_test_loader(args.data_root, device,
+                                              per_class=args.test_per_class)
+            if sub_loader is not None:
+                print(f"[eval] confusion matrix — test subset ({args.test_per_class}/kelas)")
+                plot_confusion_matrix(
+                    model, sub_loader, device, classes=classes,
+                    simpan=str(C.RESULT_DIR / f"{args.run_name}_cm_test{args.test_per_class}.png"))
 
     tutup_tensorboard(writer)
 

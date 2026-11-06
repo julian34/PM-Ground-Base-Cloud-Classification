@@ -66,7 +66,7 @@ Argumen lain: `--zip`, `--raw-dir`, `--out`, `--val-frac` (default 0.15),
 
 Hasil akhir berbentuk ImageFolder:
 
-```
+```text
 data/processed/
 ├── train/<kelas>/*.jpg
 ├── val/<kelas>/*.jpg
@@ -103,7 +103,7 @@ jumlah parameter trainable per tahap.
 TensorBoard **aktif sendiri** begitu training berjalan — tak perlu langkah manual.
 Buka dasbor di:
 
-```
+```text
 http://localhost:6006
 ```
 

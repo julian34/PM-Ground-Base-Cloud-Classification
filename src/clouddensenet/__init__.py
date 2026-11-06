@@ -25,7 +25,7 @@ from .losses import FocalLoss, init_new_layers, lecun_uniform_
 from .model import CloudDenseNet
 from .pretrained import muat_imagenet, nolkan_input_nd
 from .spectral import br_ratio_lambda, lambda_relatif, valid_mask
-from .tblog import catat_epoch, siapkan_tensorboard, tutup_tensorboard
+from .tblog import catat_epoch, hentikan_server, siapkan_tensorboard, tutup_tensorboard
 
 __all__ = [
     "config",
@@ -41,7 +41,7 @@ __all__ = [
     "EpochLogger",
     "GradCAM", "overlay_cam", "plot_gradcam",
     "br_ratio_lambda", "lambda_relatif", "valid_mask",
-    "siapkan_tensorboard", "catat_epoch", "tutup_tensorboard",
+    "siapkan_tensorboard", "catat_epoch", "tutup_tensorboard", "hentikan_server",
 ]
 
 __version__ = "0.1.0"
