@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from clouddensenet import config as C  # noqa: E402
 from clouddensenet import (  # noqa: E402
-    CloudDenseNet, FocalLoss, apply_phase, build_loaders, build_test_loader,
+    CloudDenseNet, EpochLogger, FocalLoss, apply_phase, build_loaders, build_test_loader,
     catat_epoch, evaluate, muat_imagenet, nolkan_input_nd, phase_of, set_seed,
     siapkan_tensorboard, train_one_epoch, tutup_tensorboard,
 )
@@ -75,6 +75,9 @@ def main():
         auto_launch=C.TB_AUTO_LAUNCH, port=C.TB_PORT,
     )
 
+    # Log per-epoch ke satu file CSV (append; aman untuk resume).
+    epoch_logger = EpochLogger(C.RESULT_DIR / f"{args.run_name}_log.csv")
+
     history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": [], "val_f1": []}
     best_f1, start_epoch, current_phase = -1.0, 1, 0
 
@@ -110,11 +113,13 @@ def main():
 
         for k, v in zip(history, [tr_loss, tr_acc, va_loss, va_acc, va_f1]):
             history[k].append(v)
-        catat_epoch(writer, epoch, tr_loss, tr_acc, va_loss, va_acc, va_f1,
-                    optimizer.param_groups[0]["lr"])
+        lr_now = optimizer.param_groups[0]["lr"]
+        dt = time.time() - t0
+        catat_epoch(writer, epoch, tr_loss, tr_acc, va_loss, va_acc, va_f1, lr_now)
+        epoch_logger.catat(epoch, phase, tr_loss, tr_acc, va_loss, va_acc, va_f1, lr_now, dt)
         print(f"Epoch {epoch:02d}/{args.epochs} [tahap {phase}] | "
               f"train loss {tr_loss:.4f} acc {tr_acc:.3f} | "
-              f"val loss {va_loss:.4f} acc {va_acc:.3f} f1 {va_f1:.3f} | {time.time() - t0:.0f}s")
+              f"val loss {va_loss:.4f} acc {va_acc:.3f} f1 {va_f1:.3f} | {dt:.0f}s")
 
         if va_f1 > best_f1:
             best_f1 = va_f1
