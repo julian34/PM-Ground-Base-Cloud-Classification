@@ -21,7 +21,7 @@ SEED = 42
 # Data
 # --------------------------------------------------------------------------- #
 NUM_CLASSES = 7
-IMG_SIZE = 224                       # 224 x 224 piksel, RGB
+IMG_SIZE = 512                       # 224 x 224 piksel, RGB
 MEAN = [0.485, 0.456, 0.406]         # normalisasi ImageNet
 STD = [0.229, 0.224, 0.225]
 EPS = 1e-6
@@ -56,7 +56,7 @@ LAM_SCALE = 10.0
 SE_REDUCTION = 16        # rasio reduksi r (Hu et al., 2018)
 SE_INIT_BIAS = 3.0       # sigmoid(3) ≈ 0.953 -> SE awal mendekati identitas
 P_DROP = 0.8             # dropout cabang Block 1
-P_DROP_TOP = 0.8         # dropout Top Block
+P_DROP_TOP = 0.5         # dropout Top Block
 FUSION_ALPHA_INIT = 1.0
 TOP_POOL = 7
 TOP_DIMS = [TOP_POOL * TOP_POOL * 1024, 632, 512, 32]
@@ -94,7 +94,7 @@ PHASES = [
     (80, 1e-6, "full",    "Full Defrost (end-to-end)"),
 ]
 
-BATCH_SIZE = 2 if DEBUG else 32
+BATCH_SIZE = 2 if DEBUG else 8
 EPOCHS = PHASES[-1][0]
 EPOCH_LIMIT = None           # None = jadwal penuh
 
