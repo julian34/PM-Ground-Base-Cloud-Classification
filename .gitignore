@@ -22,6 +22,7 @@ artifacts/onnx/
 
 # Folder cadangan — jangan disentuh/commit
 Backup/
+laporan/
 
 # OS / editor
 .DS_Store
