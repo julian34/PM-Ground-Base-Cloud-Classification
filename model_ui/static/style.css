@@ -277,6 +277,8 @@ body {
   color: var(--danger); font-size: 13px;
 }
 .status .error svg { flex: none; margin-top: 1px; }
+/* Pesan error bisa multi-baris (detail size mismatch per-lapisan). */
+#errorMsg { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow-y: auto; }
 
 [hidden] { display: none !important; }
 

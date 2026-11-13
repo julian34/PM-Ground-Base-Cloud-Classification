@@ -5,8 +5,10 @@ Alur sama persis dengan validasi/evaluasi training supaya prediksi konsisten:
     PIL(RGB) -> Resize(IMG_SIZE) -> ToTensor([0,1]) -> siapkan_batch (norm imagenet + λ B/R)
     -> model(x, lam) -> softmax -> confidence per-kelas
 
-Checkpoint dimuat dengan pola toleran (lihat `scripts/export_onnx.py`). Model
-di-cache per-checkpoint agar ganti pilihan di UI tidak memuat ulang bobot.
+Checkpoint dimuat lewat `clouddensenet.bangun_dari_checkpoint`, yang membaca
+dimensi Top Block dari bentuk tensor `top.*` sehingga checkpoint dari varian head
+lama (07–12-11-2026) tetap bisa dipakai. Model di-cache per-checkpoint agar ganti
+pilihan di UI tidak memuat ulang bobot.
 """
 from __future__ import annotations
 
@@ -27,7 +29,9 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from clouddensenet import config as C  # noqa: E402
-from clouddensenet import CloudDenseNet, GradCAM, overlay_cam, siapkan_batch  # noqa: E402
+from clouddensenet import (  # noqa: E402
+    CloudDenseNet, GradCAM, bangun_dari_checkpoint, overlay_cam, siapkan_batch,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -53,31 +57,6 @@ def temukan_checkpoint(ckpt_dir: Path = C.CKPT_DIR) -> dict:
     default = next((r for r in non_last if r.endswith(disukai)),
                    non_last[0] if non_last else (rel[0] if rel else None))
     return {"checkpoints": rel, "default": default}
-
-
-def _muat_state_dict(model: torch.nn.Module, ckpt_path: Path, device: torch.device) -> None:
-    """Muat bobot dari checkpoint, toleran terhadap beberapa format kunci.
-
-    Pola disalin dari `scripts/export_onnx.py:muat_state_dict` agar perilaku sama.
-    """
-    ck = torch.load(ckpt_path, map_location=device, weights_only=False)
-    if isinstance(ck, dict):
-        state = (ck.get("model") or ck.get("model_state_dict")
-                 or ck.get("state_dict") or ck)
-    else:
-        state = ck
-    try:
-        model.load_state_dict(state, strict=False)
-    except RuntimeError as e:
-        # strict=False mengabaikan kunci hilang/berlebih, TAPI shape yang tak cocok
-        # tetap melempar RuntimeError. Itu artinya checkpoint ini dilatih dengan
-        # arsitektur berbeda (mis. TopBlock versi lama). Ubah jadi ValueError agar
-        # app.py membalasnya sebagai HTTP 400 ber-JSON, bukan 500 teks polos.
-        raise ValueError(
-            f"Checkpoint '{ckpt_path.name}' tidak cocok dengan arsitektur model saat "
-            "ini (kemungkinan dilatih dengan versi arsitektur berbeda). Pilih checkpoint "
-            f"yang sesuai atau latih ulang. Detail: {str(e).splitlines()[0]}"
-        ) from e
 
 
 def _nama_rapi(kelas: str) -> str:
@@ -124,8 +103,8 @@ class ClassifierService:
         key = str(path)
         model = self._cache.get(key)
         if model is None:
-            model = CloudDenseNet().to(self.device)
-            _muat_state_dict(model, path, self.device)
+            # Head dibangun sesuai checkpoint; ValueError (detail lengkap) -> HTTP 400.
+            model, _ = bangun_dari_checkpoint(path, self.device)
             model.eval().float()
             self._cache[key] = model
         rel = path.relative_to(self.ckpt_dir.resolve()).as_posix()
