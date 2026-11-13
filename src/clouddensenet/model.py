@@ -14,12 +14,13 @@ from .blocks import (
     DenseBlock1, DenseBlock2, DenseBlock3, DenseBlock4,
     TopBlock, TransitionLayer1, TransitionLayer2, TransitionLayer3,
 )
-from .config import ND_CH, NUM_CLASSES, USE_SE
+from .config import ND_CH, NUM_CLASSES, USE_SE, USE_VIT, VIT_DIM
 from .losses import init_new_layers
+from .vit_branch import ViTBranch
 
 
 class CloudDenseNet(nn.Module):
-    def __init__(self, growth_rate=32, n_cls=NUM_CLASSES, top_hidden=None):
+    def __init__(self, growth_rate=32, n_cls=NUM_CLASSES, top_hidden=None, use_vit=USE_VIT):
         super().__init__()
         kw = dict(growth_rate=growth_rate, nd=ND_CH, use_se=USE_SE)
 
@@ -50,9 +51,21 @@ class CloudDenseNet(nn.Module):
         self.se4, self.sa4 = SEBlock(1024), SpatialAttnBR()
         self.norm5 = nn.BatchNorm2d(1024)
 
+        # ===== Cabang ViT (opsional) =====
+        # Dibangun hanya bila use_vit=True. Membaca peta stem (64 channel) dan
+        # menghasilkan vektor VIT_DIM yang di-concat sebelum Top Block.
+        self.use_vit = use_vit
+        if use_vit:
+            self.vit = ViTBranch(in_channels=64)
+            extra_dim = VIT_DIM
+        else:
+            self.vit = None
+            extra_dim = 0
+
         # ===== Top Block =====
         # top_hidden=None -> config.TOP_HIDDEN; isi dari checkpoint saat inferensi.
-        self.top = TopBlock(n_cls=n_cls, hidden=top_hidden)
+        # extra_dim>0 memperlebar Linear pertama agar muat vektor cabang ViT.
+        self.top = TopBlock(n_cls=n_cls, hidden=top_hidden, extra_dim=extra_dim)
 
         # Init LeCun-uniform untuk lapisan BARU (lihat losses.init_new_layers).
         self._init_lapisan_baru()
@@ -76,6 +89,8 @@ class CloudDenseNet(nn.Module):
 
     def forward(self, x, lam=None, return_all=False):
         s = self.maxpool(self.relu(self.bn(self.conv(x))))        # (B, 64, 56, 56)
+
+        # --- Cabang A: backbone DenseNet (seperti semula) ---
         b1 = self.sa(self.se1(self.block1(s)), lam)               # (B, 256, 56, 56)
         t1 = self.trans1(b1)
         b2 = self.sa2(self.se2(self.block2(t1)), lam)             # (B, 512, 28, 28)
@@ -83,11 +98,16 @@ class CloudDenseNet(nn.Module):
         b3 = self.sa3(self.se3(self.block3(t2)), lam)             # (B, 1024, 14, 14)
         t3 = self.trans3(b3)
         b4 = self.sa4(self.se4(self.block4(t3)), lam)             # (B, 1024, 7, 7)
-
         out = F.relu(self.norm5(b4))
-        logits = self.top(out)                                    # (B, n_cls)
+
+        # --- Cabang B: ViT (opsional) dari peta stem yang sama ---
+        # vec_vit = None bila ViT nonaktif -> Top Block berperilaku lama.
+        vec_vit = self.vit(s) if self.vit is not None else None   # (B, VIT_DIM) | None
+
+        # --- Fusi: Top Block meng-GAP 'out' lalu concat dgn vec_vit ---
+        logits = self.top(out, extra=vec_vit)                     # (B, n_cls)
         if return_all:
             return {"stem": s, "block1": b1, "trans1": t1, "block2": b2, "trans2": t2,
                     "block3": b3, "trans3": t3, "block4": b4, "out": out,
-                    "logits": logits}
+                    "vit": vec_vit, "logits": logits}
         return logits

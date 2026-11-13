@@ -67,6 +67,22 @@ TOP_HIDDEN = (512, 128, 32, 16)
 BRANCH_DIMS = [256, 2048, 1024]
 
 # --------------------------------------------------------------------------- #
+# Cabang ViT (opsional) — model dua-cabang: DenseNet + ViT
+# --------------------------------------------------------------------------- #
+# Bila USE_VIT=True, setelah stem (konvolusi pertama) aliran bercabang dua:
+#   Cabang A = backbone DenseNet (seperti biasa) -> vektor 1024
+#   Cabang B = ViT kecil yang membaca peta stem  -> vektor VIT_DIM
+# Kedua vektor digabung (concat) sebelum masuk Top Block.
+# Default False -> perilaku & checkpoint lama tidak berubah sama sekali.
+USE_VIT = False          # True = aktifkan cabang ViT paralel
+VIT_DIM = 192            # dimensi embedding/token ViT (kecil agar tak mudah overfit)
+VIT_DEPTH = 4            # jumlah lapis TransformerEncoder
+VIT_HEADS = 4            # jumlah attention head (VIT_DIM harus habis dibagi angka ini)
+VIT_PATCH = 8            # ukuran patch pada peta stem 56x56 -> 7x7 = 49 token
+VIT_MLP_RATIO = 2.0      # lebar hidden MLP di dalam encoder = VIT_DIM x rasio ini
+VIT_DROP = 0.1           # dropout di dalam cabang ViT
+
+# --------------------------------------------------------------------------- #
 # Optimasi (AdamW + Focal Loss)
 # --------------------------------------------------------------------------- #
 WEIGHT_DECAY = 1e-2
@@ -98,7 +114,7 @@ PHASES = [
     (80, 1e-6, "full",    "Full Defrost (end-to-end)"),
 ]
 
-BATCH_SIZE = 2 if DEBUG else 8
+BATCH_SIZE = 2 if DEBUG else 32
 EPOCHS = PHASES[-1][0]
 EPOCH_LIMIT = None           # None = jadwal penuh
 
