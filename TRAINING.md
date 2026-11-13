@@ -188,7 +188,61 @@ Set `DEBUG = True` di `config.py` untuk melatih hanya 1–3 batch/epoch di CPU �
 berguna memverifikasi pipeline tanpa menunggu training penuh. Kembalikan ke
 `False` untuk training sungguhan.
 
-## 12. Troubleshooting
+## 12. Melihat jumlah parameter
+
+Jalankan dari root proyek (venv aktif).
+
+**Cara tercepat** — smoke test bawaan mencetak total parameter di baris akhir:
+
+```bash
+python tests/test_forward.py
+# ... [OK] forward pass sukses | total parameter: 8,519,809
+```
+
+**Total vs trainable** (angka *trainable* berubah tiap tahap pembekuan; panggil
+setelah `apply_phase` untuk melihat jumlah per tahap):
+
+```python
+import sys; sys.path.insert(0, "src")
+from clouddensenet import CloudDenseNet
+
+m = CloudDenseNet(use_vit=True)        # False = tanpa cabang ViT
+total     = sum(p.numel() for p in m.parameters())
+trainable = sum(p.numel() for p in m.parameters() if p.requires_grad)
+print(f"Total     : {total:,}")
+print(f"Trainable : {trainable:,}")
+```
+
+**Rincian per submodul:**
+
+```python
+import sys; sys.path.insert(0, "src")
+from clouddensenet import CloudDenseNet
+
+m = CloudDenseNet(use_vit=True)
+for sub in ["conv", "block1", "block2", "block3", "block4", "top", "vit"]:
+    mod = getattr(m, sub, None)
+    if mod is not None:
+        print(f"{sub:8s}: {sum(p.numel() for p in mod.parameters()):,}")
+```
+
+Hasil (per 2026-11-13):
+
+| Submodul        | Tanpa ViT | Dengan ViT |
+| --------------- | --------: | ---------: |
+| `conv` (stem)   |     9.408 |      9.408 |
+| `block1`        |   403.590 |    403.590 |
+| `block2`        | 1.056.780 |  1.056.780 |
+| `block3`        | 3.111.960 |  3.111.960 |
+| `block4`        | 2.340.880 |  2.340.880 |
+| `top`           |   596.615 |    694.919 |
+| `vit`           |         — |  1.984.896 |
+| **Total**       | **8.519.809** | **10.603.009** |
+
+> `top` membesar saat ViT aktif karena Linear pertamanya melebar untuk menampung
+> vektor cabang ViT (fusi concat). Total bertambah ±2,08 jt (+25%).
+
+## 13. Troubleshooting
 
 | Gejala                                                     | Kemungkinan sebab & solusi                                                                             |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
