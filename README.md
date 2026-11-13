@@ -56,6 +56,7 @@ Dokumen penting untuk memahami & mengembangkan proyek ini:
 | Dokumen | Isi |
 |---|---|
 | **[`docs/Panduan_Instalasi_Clone.md`](docs/Panduan_Instalasi_Clone.md)** | Langkah pasang dari hasil clone (venv, dependensi, dataset, training). |
+| **[`docs/Panduan_Pull.md`](docs/Panduan_Pull.md)** | Cara menarik pembaruan terbaru (git pull), stash, dan atasi konflik. |
 | **[`CONTRIBUTING.md`](CONTRIBUTING.md)** | Aturan kolaborasi GitHub: branch, commit, PR, review, Issue. |
 | **[`CLAUDE.md`](CLAUDE.md)** | Konvensi kode, aturan arsitektur, perintah penting. |
 | **[`TRAINING.md`](TRAINING.md)** | Alur training lengkap, jadwal tahap, dan penyiapan data (§5). |
