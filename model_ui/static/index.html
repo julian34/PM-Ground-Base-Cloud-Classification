@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>CloudDenseNet — Uji Model</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6.5 18a4 4 0 0 1-.8-7.92A5.5 5.5 0 0 1 16.3 9.2 3.9 3.9 0 0 1 17.5 18H6.5Z"/>
+          </svg>
+        </span>
+        <div>
+          <h1>CloudDenseNet</h1>
+          <p>Klasifikasi 7 jenis awan dari citra langit</p>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <nav class="nav" aria-label="Mode">
+          <a href="/" class="active" aria-current="page">Satu citra</a>
+          <a href="/batch">Satu folder</a>
+        </nav>
+        <label class="field">
+          <span>Checkpoint</span>
+          <select id="checkpoint" aria-label="Pilih checkpoint model"></select>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="gradcam" />
+          <span class="track" aria-hidden="true"><span class="thumb"></span></span>
+          <span>Grad-CAM</span>
+        </label>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <!-- Panggung unggah -->
+      <section class="panel stage">
+        <div class="panel-head"><h2>Citra masukan</h2></div>
+        <div class="stage-body">
+          <input type="file" id="file" accept="image/*" hidden />
+
+          <div class="drop" id="drop" role="button" tabindex="0"
+               aria-label="Unggah gambar — seret ke sini atau tekan Enter untuk memilih berkas">
+            <div class="drop-empty" id="dropEmpty">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M7 18a4 4 0 0 1-.8-7.92A5.5 5.5 0 0 1 16.8 9.2 3.9 3.9 0 0 1 18 18"/>
+                <path d="M12 12v6"/><path d="m9.5 14.5 2.5-2.5 2.5 2.5"/>
+              </svg>
+              <p class="line1">Seret citra langit ke sini</p>
+              <p class="hint">atau klik untuk memilih · JPG / PNG · maks 15 MB</p>
+            </div>
+
+            <div class="preview-wrap" id="previewWrap" hidden>
+              <div class="preview-frame"><img id="preview" alt="Pratinjau citra yang diunggah" /></div>
+            </div>
+          </div>
+
+          <div class="stage-actions" id="stageActions" hidden>
+            <button class="btn" id="clear" type="button">Ganti citra</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel analisis -->
+      <section class="panel analysis" aria-live="polite">
+        <div class="panel-head"><h2>Hasil prediksi</h2></div>
+        <div class="analysis-body">
+
+          <!-- Empty -->
+          <div class="empty" id="empty">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12h3l2-5 4 10 2.5-6 1.5 3h5"/>
+            </svg>
+            <p class="line1">Belum ada citra</p>
+            <p class="hint">Unggah satu foto langit untuk melihat jenis awan dan tingkat kepercayaan model per kelas.</p>
+          </div>
+
+          <!-- Result -->
+          <div class="result" id="resultBody" hidden>
+            <div class="readout">
+              <div>
+                <span class="eyebrow">Prediksi teratas</span>
+                <div class="name" id="topName">—</div>
+              </div>
+              <div class="conf">
+                <div class="val" id="topConf">0%</div>
+                <span class="eyebrow">kepercayaan</span>
+              </div>
+            </div>
+
+            <div class="bars" id="bars" role="list" aria-label="Kepercayaan per kelas"></div>
+
+            <figure class="cam" id="camWrap" hidden>
+              <figcaption>Grad-CAM · area yang memengaruhi prediksi</figcaption>
+              <img id="cam" alt="Peta atensi Grad-CAM di atas citra masukan" />
+            </figure>
+
+            <div class="meta" id="meta"></div>
+          </div>
+
+          <!-- Status: loading / error -->
+          <div class="status" id="status">
+            <div class="loading" id="loading" hidden>
+              <span class="spinner" aria-hidden="true"></span><span>Menganalisis citra…</span>
+            </div>
+            <div class="error" id="error" hidden role="alert">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16h.01"/>
+              </svg>
+              <span id="errorMsg"></span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
