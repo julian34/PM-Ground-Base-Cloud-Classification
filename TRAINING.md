@@ -21,6 +21,7 @@ hard-code di script.
 # PowerShell (Windows)
 .\.venv\Scripts\Activate.ps1
 ```
+
 ```bash
 # Git Bash
 source .venv/Scripts/activate
@@ -88,12 +89,12 @@ Dengan argumen kustom:
 python scripts/train.py --data-root data/processed --epochs 80 --run-name cloud
 ```
 
-| Argumen | Default | Keterangan |
-|---|---|---|
-| `--data-root` | `data/processed` | Root dataset ImageFolder (`train/val/test`). |
-| `--epochs` | `80` (dari `PHASES`) | Jumlah epoch total. |
-| `--run-name` | `cloud` | Nama run (dipakai untuk checkpoint & folder TensorBoard). |
-| `--resume` / `--no-resume` | resume **aktif** | Lanjut dari `_last.pth` bila ada; `--no-resume` untuk mulai dari nol. |
+| Argumen                    | Default              | Keterangan                                                            |
+| -------------------------- | -------------------- | --------------------------------------------------------------------- |
+| `--data-root`              | `data/processed`     | Root dataset ImageFolder (`train/val/test`).                          |
+| `--epochs`                 | `80` (dari `PHASES`) | Jumlah epoch total.                                                   |
+| `--run-name`               | `cloud`              | Nama run (dipakai untuk checkpoint & folder TensorBoard).             |
+| `--resume` / `--no-resume` | resume **aktif**     | Lanjut dari `_last.pth` bila ada; `--no-resume` untuk mulai dari nol. |
 
 Saat mulai, script mencetak device, daftar kelas, jadwal tahap (`PHASES`), dan
 jumlah parameter trainable per tahap.
@@ -117,25 +118,61 @@ http://localhost:6006
 
 Pengaturan di `config.py`:
 
-| Flag | Default | Fungsi |
-|---|---|---|
-| `USE_TENSORBOARD` | `True` | Aktif/nonaktifkan penulisan log. |
-| `TB_AUTO_INSTALL` | `True` | Pasang `tensorboard` via pip bila belum ada. |
-| `TB_AUTO_LAUNCH` | `True` | Jalankan server otomatis; `False` = tetap tulis log tanpa server. |
-| `TB_PORT` | `6006` | Port server. |
-| `TB_LOG_DIR` | `artifacts/runs` | Lokasi event file (subfolder per run-name). |
+| Flag              | Default          | Fungsi                                                            |
+| ----------------- | ---------------- | ----------------------------------------------------------------- |
+| `USE_TENSORBOARD` | `True`           | Aktif/nonaktifkan penulisan log.                                  |
+| `TB_AUTO_INSTALL` | `True`           | Pasang `tensorboard` via pip bila belum ada.                      |
+| `TB_AUTO_LAUNCH`  | `True`           | Jalankan server otomatis; `False` = tetap tulis log tanpa server. |
+| `TB_PORT`         | `6006`           | Port server.                                                      |
+| `TB_LOG_DIR`      | `artifacts/runs` | Lokasi event file (subfolder per run-name).                       |
 
 ## 8. Keluaran training
 
-| Berkas | Lokasi |
-|---|---|
-| Checkpoint **terbaik** (F1 val tertinggi) | `artifacts/checkpoints/<run>_Versi01.pth` |
-| Checkpoint **terakhir** (untuk resume) | `artifacts/checkpoints/<run>_Versi01_last.pth` |
-| Kurva training (PNG) | `artifacts/results/<run>_kurva.png` |
-| Confusion matrix val (PNG) | `artifacts/results/<run>_cm_val.png` |
-| Log TensorBoard | `artifacts/runs/<run>/` |
+| Berkas                                    | Lokasi                                         |
+| ----------------------------------------- | ---------------------------------------------- |
+| Checkpoint **terbaik** (F1 val tertinggi) | `artifacts/checkpoints/<run>_Versi01.pth`      |
+| Checkpoint **terakhir** (untuk resume)    | `artifacts/checkpoints/<run>_Versi01_last.pth` |
+| Kurva training (PNG)                      | `artifacts/results/<run>_kurva.png`            |
+| Confusion matrix val (PNG)                | `artifacts/results/<run>_cm_val.png`           |
+| Log TensorBoard                           | `artifacts/runs/<run>/`                        |
 
-## 9. Melanjutkan (resume) training
+## 9. Evaluasi dari checkpoint (tanpa training ulang)
+
+Untuk membuat confusion matrix dari checkpoint yang **sudah ada** — tanpa melatih
+ulang — pakai `scripts/evaluate.py`. Script memuat bobot, menjalankan inferensi
+pada **test set held-out** (`data/processed/test`), lalu menyimpan confusion
+matrix (panel **Jumlah** + **Ternormalisasi/recall**) beserta Akurasi & F1 macro.
+
+```bash
+# checkpoint default (artifacts/checkpoints/cloud_Versi01.pth)
+python scripts/evaluate.py
+
+# checkpoint tertentu (mis. salah satu di folder list/)
+python scripts/evaluate.py --checkpoint "artifacts/checkpoints/list/cloud_Versi01_51_09246.pth" --run-name cloud_51
+```
+
+| Argumen            | Default                                   | Keterangan                                                                                        |
+| ------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `--checkpoint`     | `artifacts/checkpoints/cloud_Versi01.pth` | Path file `.pth` yang dievaluasi.                                                                 |
+| `--data-root`      | `data/processed`                          | Root dataset ImageFolder (dipakai folder `test/`).                                                |
+| `--run-name`       | `cloud`                                   | Prefiks nama berkas keluaran PNG.                                                                 |
+| `--test-per-class` | `None`                                    | Selain test penuh, evaluasi juga subset stratified N citra/kelas (mis. `300`) sebagai pembanding. |
+| `--show`           | nonaktif                                  | Tampilkan jendela plot; default hanya menyimpan PNG (`Agg`).                                      |
+
+Keluaran:
+
+| Berkas                                            | Lokasi                                   |
+| ------------------------------------------------- | ---------------------------------------- |
+| Confusion matrix test penuh (PNG)                 | `artifacts/results/<run>_cm_test.png`    |
+| Confusion matrix subset (bila `--test-per-class`) | `artifacts/results/<run>_cm_test<N>.png` |
+
+> **Varian Top Block berbeda.** Script membangun head sesuai bentuk tensor di
+> checkpoint (lewat `bangun_dari_checkpoint`), jadi checkpoint dari varian head
+> lama tetap bisa dimuat tanpa error `size mismatch`. Bila bobot benar-benar tak
+> cocok dengan arsitektur, muncul `ValueError` dengan detail kunci yang hilang —
+> bukan prediksi diam-diam dari bobot setengah-acak.
+
+## 10. Melanjutkan (resume) training
 
 Resume otomatis aktif: cukup jalankan ulang perintah yang sama, script membaca
 `_last.pth` dan melanjutkan dari epoch berikutnya.
@@ -145,21 +182,23 @@ python scripts/train.py --run-name cloud              # lanjut otomatis
 python scripts/train.py --run-name cloud --no-resume  # paksa mulai dari nol
 ```
 
-## 10. Mode DEBUG (uji cepat di CPU)
+## 11. Mode DEBUG (uji cepat di CPU)
 
 Set `DEBUG = True` di `config.py` untuk melatih hanya 1–3 batch/epoch di CPU —
 berguna memverifikasi pipeline tanpa menunggu training penuh. Kembalikan ke
 `False` untuk training sungguhan.
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
-| Gejala | Kemungkinan sebab & solusi |
-|---|---|
-| `Dataset tidak ditemukan di ...` | Jalankan langkah **5** (`split_dataset.py`) lebih dulu. |
-| Device tercetak `cpu` padahal ada GPU | `DEBUG=True` memaksa CPU; atau build PyTorch CPU-only — reinstall dengan index URL CUDA. |
-| `[!] batch N: loss NaN dilewati` | Normal sesekali (pengaman NaN). Bila >20 batch, training berhenti — periksa modul sumber yang dicetak. |
-| Port 6006 sudah dipakai | Ubah `TB_PORT` di `config.py`, atau tutup proses TensorBoard lama. |
-| TensorBoard tak mau jalan | Set `TB_AUTO_LAUNCH=False` dan buka manual: `tensorboard --logdir artifacts/runs`. |
+| Gejala                                                     | Kemungkinan sebab & solusi                                                                             |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `Dataset tidak ditemukan di ...`                           | Jalankan langkah **5** (`split_dataset.py`) lebih dulu.                                                |
+| `Checkpoint tidak ditemukan: ...` (evaluasi)               | Periksa path `--checkpoint`; lihat daftar `.pth` di `artifacts/checkpoints/`.                          |
+| `ValueError: ... tidak cocok dengan arsitektur` (evaluasi) | Checkpoint dari arsitektur lain; bukan sekadar varian Top Block. Pakai checkpoint yang sesuai.         |
+| Device tercetak `cpu` padahal ada GPU                      | `DEBUG=True` memaksa CPU; atau build PyTorch CPU-only — reinstall dengan index URL CUDA.               |
+| `[!] batch N: loss NaN dilewati`                           | Normal sesekali (pengaman NaN). Bila >20 batch, training berhenti — periksa modul sumber yang dicetak. |
+| Port 6006 sudah dipakai                                    | Ubah `TB_PORT` di `config.py`, atau tutup proses TensorBoard lama.                                     |
+| TensorBoard tak mau jalan                                  | Set `TB_AUTO_LAUNCH=False` dan buka manual: `tensorboard --logdir artifacts/runs`.                     |
 
 ---
 

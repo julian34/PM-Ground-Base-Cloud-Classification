@@ -59,7 +59,11 @@ P_DROP = 0.8             # dropout cabang Block 1
 P_DROP_TOP = 0.8         # dropout Top Block
 FUSION_ALPHA_INIT = 1.0
 TOP_POOL = 7
-TOP_DIMS = [TOP_POOL * TOP_POOL * 1024, 632, 512, 32]
+TOP_DIMS = [TOP_POOL * TOP_POOL * 1024, 632, 512, 32]   # warisan notebook, TIDAK dipakai
+# Lebar lapisan tersembunyi Top Block: 1024 -> TOP_HIDDEN... -> NUM_CLASSES.
+# Checkpoint lama memakai head berbeda (07/08/11-11: 512,128,32,16; 12-11: 512,32);
+# inferensi membaca dimensi dari checkpoint (lihat checkpoint.dimensi_top).
+TOP_HIDDEN = (512, 128, 32, 16)
 BRANCH_DIMS = [256, 2048, 1024]
 
 # --------------------------------------------------------------------------- #

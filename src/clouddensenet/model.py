@@ -19,7 +19,7 @@ from .losses import init_new_layers
 
 
 class CloudDenseNet(nn.Module):
-    def __init__(self, growth_rate=32, n_cls=NUM_CLASSES):
+    def __init__(self, growth_rate=32, n_cls=NUM_CLASSES, top_hidden=None):
         super().__init__()
         kw = dict(growth_rate=growth_rate, nd=ND_CH, use_se=USE_SE)
 
@@ -51,7 +51,8 @@ class CloudDenseNet(nn.Module):
         self.norm5 = nn.BatchNorm2d(1024)
 
         # ===== Top Block =====
-        self.top = TopBlock()
+        # top_hidden=None -> config.TOP_HIDDEN; isi dari checkpoint saat inferensi.
+        self.top = TopBlock(n_cls=n_cls, hidden=top_hidden)
 
         # Init LeCun-uniform untuk lapisan BARU (lihat losses.init_new_layers).
         self._init_lapisan_baru()

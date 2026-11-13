@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from clouddensenet import config as C  # noqa: E402
-from clouddensenet import CloudDenseNet, build_test_loader, set_seed  # noqa: E402
+from clouddensenet import bangun_dari_checkpoint, build_test_loader, set_seed  # noqa: E402
 from clouddensenet.viz import plot_confusion_matrix  # noqa: E402
 
 
@@ -58,11 +58,13 @@ def main():
     if not args.data_root.exists():
         raise SystemExit(f"Dataset tidak ditemukan di {args.data_root}")
 
-    model = CloudDenseNet().to(device)
-    ck = torch.load(args.checkpoint, map_location=device, weights_only=False)
-    model.load_state_dict(ck["model"])
+    # Bangun head sesuai dimensi Top Block di checkpoint (varian head lama tetap
+    # dimuat), konsisten dengan web UI. ValueError bila bobot benar-benar tak cocok.
+    model, info = bangun_dari_checkpoint(args.checkpoint, device)
     model.eval()
-    print(f"Muat {args.checkpoint.name} (f1={ck.get('best_f1', float('nan')):.4f})")
+    f1 = info.get("best_f1")
+    print(f"Muat {args.checkpoint.name} (f1={f1:.4f})" if f1 is not None
+          else f"Muat {args.checkpoint.name} (top_hidden={info['top_hidden']})")
 
     C.RESULT_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .attention import SEBlock
-from .config import NUM_CLASSES, P_DROP_TOP, USE_SCCONV
+from .config import NUM_CLASSES, P_DROP_TOP, TOP_HIDDEN, USE_SCCONV
 from .conv import SCConv
 
 
@@ -109,24 +109,31 @@ class TransitionLayer3(TransitionLayer2):
 
 
 class TopBlock(nn.Module):
-    """GAP -> FC(1024->32) -> BN -> ReLU -> Dropout -> FC(32->n_cls)."""
+    """GAP -> [FC -> BN -> ReLU] x len(hidden) -> Dropout -> FC(hidden[-1] -> n_cls).
 
-    def __init__(self, in_channels=1024, n_cls=NUM_CLASSES, p=P_DROP_TOP):
+    `hidden` = lebar lapisan tersembunyi (default `config.TOP_HIDDEN`). Urutan modul
+    di `bottleneck` (Linear, BN, ReLU per lapisan, lalu Dropout) menentukan nama kunci
+    state_dict (`top.bottleneck.0/3/6/...`) — jangan diubah agar checkpoint lama
+    tetap bisa dimuat.
+    """
+
+    def __init__(self, in_channels=1024, n_cls=NUM_CLASSES, p=P_DROP_TOP, hidden=None):
         super().__init__()
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.flatten = nn.Flatten()
 
-        mid_features = 32
-        self.bottleneck = nn.Sequential(
-            nn.Linear(in_channels, mid_features),
-            nn.BatchNorm1d(mid_features),
-            nn.ReLU(inplace=True),
-            nn.Dropout(p),
-        )
-        self.fc = nn.Linear(mid_features, n_cls)
+        hidden = tuple(TOP_HIDDEN if hidden is None else hidden)
+        self.hidden = hidden
+        lapisan, d_in = [], in_channels
+        for d_out in hidden:
+            lapisan += [nn.Linear(d_in, d_out), nn.BatchNorm1d(d_out), nn.ReLU(inplace=True)]
+            d_in = d_out
+        lapisan.append(nn.Dropout(p))
+        self.bottleneck = nn.Sequential(*lapisan)
+        self.fc = nn.Linear(d_in, n_cls)
 
     def forward(self, x):
         x = self.global_pool(x)   # [B, 1024, 1, 1]
         x = self.flatten(x)       # [B, 1024]
-        x = self.bottleneck(x)    # [B, 32]
+        x = self.bottleneck(x)    # [B, hidden[-1]]
         return self.fc(x)         # [B, n_cls] (logits untuk CrossEntropy/Focal)
