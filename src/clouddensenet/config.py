@@ -94,7 +94,7 @@ PHASES = [
     (80, 1e-6, "full",    "Full Defrost (end-to-end)"),
 ]
 
-BATCH_SIZE = 2 if DEBUG else 8
+BATCH_SIZE = 2 if DEBUG else 32
 EPOCHS = PHASES[-1][0]
 EPOCH_LIMIT = None           # None = jadwal penuh
 

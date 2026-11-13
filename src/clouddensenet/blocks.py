@@ -118,12 +118,26 @@ class TopBlock(nn.Module):
 
         mid_features = 32
         self.bottleneck = nn.Sequential(
-            nn.Linear(in_channels, mid_features),
-            nn.BatchNorm1d(mid_features),
+
+            nn.Linear(in_channels, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(inplace=True),
+
+            nn.Linear(512, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(inplace=True),
+
+            nn.Linear(128, 32),
+            nn.BatchNorm1d(32),
+            nn.ReLU(inplace=True),
+
+
+            nn.Linear(32, 16),
+            nn.BatchNorm1d(16),
             nn.ReLU(inplace=True),
             nn.Dropout(p),
         )
-        self.fc = nn.Linear(mid_features, n_cls)
+        self.fc = nn.Linear(16, n_cls)
 
     def forward(self, x):
         x = self.global_pool(x)   # [B, 1024, 1, 1]
