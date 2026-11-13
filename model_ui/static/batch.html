@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>CloudDenseNet — Uji Folder</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6.5 18a4 4 0 0 1-.8-7.92A5.5 5.5 0 0 1 16.3 9.2 3.9 3.9 0 0 1 17.5 18H6.5Z"/>
+          </svg>
+        </span>
+        <div>
+          <h1>CloudDenseNet</h1>
+          <p>Klasifikasi 7 jenis awan — proses satu folder sekaligus</p>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <nav class="nav" aria-label="Mode">
+          <a href="/">Satu citra</a>
+          <a href="/batch" class="active" aria-current="page">Satu folder</a>
+        </nav>
+        <label class="field">
+          <span>Checkpoint</span>
+          <select id="checkpoint" aria-label="Pilih checkpoint model"></select>
+        </label>
+      </div>
+    </header>
+
+    <!-- Panel unggah folder -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Folder citra</h2>
+        <span class="count" id="selCount" hidden></span>
+      </div>
+      <div class="stage-body">
+        <!-- webkitdirectory: pilih seluruh folder; `multiple` izinkan pilih banyak berkas juga -->
+        <input type="file" id="folder" accept="image/*" webkitdirectory directory multiple hidden />
+        <input type="file" id="files" accept="image/*" multiple hidden />
+
+        <div class="drop drop-folder" id="drop" role="button" tabindex="0"
+             aria-label="Pilih folder berisi citra langit, atau seret berkas gambar ke sini">
+          <div class="drop-empty" id="dropEmpty">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.2h7A1.5 1.5 0 0 1 19 9.7V17a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 17Z"/>
+            </svg>
+            <p class="line1">Pilih folder citra langit</p>
+            <p class="hint">semua JPG / PNG di dalamnya diproses · atau seret beberapa berkas ke sini</p>
+            <div class="drop-actions">
+              <button class="btn" id="pickFolder" type="button">Pilih folder…</button>
+              <button class="btn ghost" id="pickFiles" type="button">Pilih berkas…</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Baris aksi: jalankan / progres / ekspor -->
+        <div class="run-bar" id="runBar" hidden>
+          <button class="btn primary" id="run" type="button">Proses semua</button>
+          <button class="btn" id="reset" type="button">Kosongkan</button>
+          <div class="progress" id="progress" hidden>
+            <div class="progress-track"><span class="progress-fill" id="progressFill"></span></div>
+            <span class="progress-label" id="progressLabel">0 / 0</span>
+          </div>
+          <button class="btn ghost" id="csv" type="button" hidden>Unduh CSV</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Ringkasan distribusi kelas -->
+    <section class="panel" id="summaryPanel" hidden>
+      <div class="panel-head"><h2>Ringkasan</h2></div>
+      <div class="summary-body">
+        <div class="summary-stats" id="summaryStats"></div>
+        <div class="summary-dist" id="summaryDist" role="list" aria-label="Sebaran jenis awan"></div>
+      </div>
+    </section>
+
+    <!-- Tabel hasil per-gambar -->
+    <section class="panel" aria-live="polite">
+      <div class="panel-head">
+        <h2>Tabel hasil per-gambar</h2>
+        <div class="meta" id="tableMeta"></div>
+      </div>
+      <div class="table-body">
+
+        <div class="empty" id="empty">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+          <p class="line1">Belum ada hasil</p>
+          <p class="hint">Pilih satu folder citra langit, lalu tekan “Proses semua”. Setiap gambar dicatat dengan jenis awan prediksi dan angka kepercayaannya.</p>
+        </div>
+
+        <div class="table-scroll" id="tableScroll" hidden>
+          <table class="result-table">
+            <thead>
+              <tr>
+                <th class="col-no">#</th>
+                <th class="col-file">Berkas</th>
+                <th class="col-type">Jenis awan</th>
+                <th class="col-conf" colspan="2">Kepercayaan</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <div class="error" id="error" hidden role="alert">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16h.01"/>
+          </svg>
+          <span id="errorMsg"></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/batch.js"></script>
+</body>
+</html>

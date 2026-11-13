@@ -65,6 +65,7 @@ Dokumen penting untuk memahami & mengembangkan proyek ini:
 | **[`docs/DATASET_SPLIT.md`](docs/DATASET_SPLIT.md)** | Logika split train/val/test (stratified, seeded). |
 | **[`docs/EDA_AUGMENTASI.md`](docs/EDA_AUGMENTASI.md)** | Analisis data (EDA) & strategi augmentasi. |
 | **[`data/README.md`](data/README.md)** | Struktur folder dataset & angka per kelas. |
+| **[`model_ui/README.md`](model_ui/README.md)** | Web UI uji model: upload gambar → prediksi + confidence + Grad-CAM. |
 
 ## Instalasi
 
