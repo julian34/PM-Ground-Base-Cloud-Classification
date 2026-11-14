@@ -74,7 +74,7 @@ BRANCH_DIMS = [256, 2048, 1024]
 #   Cabang B = ViT kecil yang membaca peta stem  -> vektor VIT_DIM
 # Kedua vektor digabung (concat) sebelum masuk Top Block.
 # Default False -> perilaku & checkpoint lama tidak berubah sama sekali.
-USE_VIT = False          # True = aktifkan cabang ViT paralel
+USE_VIT = True          # True = aktifkan cabang ViT paralel
 VIT_DIM = 192            # dimensi embedding/token ViT (kecil agar tak mudah overfit)
 VIT_DEPTH = 4            # jumlah lapis TransformerEncoder
 VIT_HEADS = 4            # jumlah attention head (VIT_DIM harus habis dibagi angka ini)
