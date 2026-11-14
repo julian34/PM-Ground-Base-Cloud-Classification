@@ -126,6 +126,60 @@ Pengaturan di `config.py`:
 | `TB_PORT`         | `6006`           | Port server.                                                      |
 | `TB_LOG_DIR`      | `artifacts/runs` | Lokasi event file (subfolder per run-name).                       |
 
+### 7.1. TensorBoard masih menampilkan data lama walau file sudah dihapus
+
+Ini **bukan bug** — gabungan dua perilaku bawaan TensorBoard + desain `tblog.py`.
+Menghapus *sebagian* file saja biasanya tidak cukup.
+
+**Sebab 1 — file event menumpuk di folder run yang sama.** TensorBoard
+**menggabungkan (merge) SEMUA** file `events.out.tfevents.*` dalam satu folder jadi
+satu grafik. Tiap training ulang dengan `--run-name` yang sama membuat file event
+**baru** (tidak menimpa yang lama), jadi kurva run-run lama ikut tertimpa:
+
+```text
+artifacts/runs/cloud/
+├── events.out.tfevents.…32508.0   ← run 1
+├── events.out.tfevents.…5352.0    ← run 2  (semua di-merge jadi satu kurva)
+└── events.out.tfevents.…8092.0    ← run 3
+```
+
+**Sebab 2 — server TensorBoard sengaja dibiarkan hidup & nge-cache di RAM.**
+`tblog.py` tidak mematikan server saat training selesai (agar dasbor tetap bisa
+dibuka). Akibatnya: (a) server yang masih jalan menyimpan data lama di memori, jadi
+**menghapus file di disk ≠ hilang dari server**; (b) saat training lagi, server
+melihat port 6006 sudah dipakai lalu **memakai ulang server lama** (bukan start
+fresh). Server dari sesi sebelumnya berjalan *detached*, jadi `hentikan_server()`
+(yang hanya mematikan server proses Python yang sama) tidak menyentuhnya — harus
+dimatikan manual.
+
+**Membersihkan dengan benar — urutannya penting:**
+
+1. **Matikan dulu** server TensorBoard yang masih hidup (langkah yang sering dilewati):
+
+   ```powershell
+   # PowerShell — cari & matikan pemilik port 6006
+   Get-NetTCPConnection -LocalPort 6006 | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+   # alternatif kasar:
+   taskkill /IM tensorboard.exe /F 2>$null
+   ```
+
+2. **Baru hapus** log lama (setelah server mati, file tidak lagi dipegang):
+
+   ```powershell
+   Remove-Item -Recurse -Force "artifacts\runs\*"
+   ```
+
+3. **Jalankan training lagi** → server fresh hanya membaca file yang ada sekarang.
+   Di browser tekan **Ctrl+Shift+R** (hard refresh) atau klik tombol reload di
+   pojok kanan atas TensorBoard.
+
+**Cara menghindari penumpukan:** pakai `--run-name` unik tiap percobaan supaya tiap
+run punya folder sendiri (bisa dipilih/dimatikan per-run di sidebar TensorBoard):
+
+```powershell
+python scripts/train.py --run-name "cloud_$(Get-Date -Format yyyyMMdd_HHmm)"
+```
+
 ## 8. Keluaran training
 
 | Berkas                                    | Lokasi                                         |
@@ -253,6 +307,8 @@ Hasil (per 2026-11-13):
 | `[!] batch N: loss NaN dilewati`                           | Normal sesekali (pengaman NaN). Bila >20 batch, training berhenti — periksa modul sumber yang dicetak. |
 | Port 6006 sudah dipakai                                    | Ubah `TB_PORT` di `config.py`, atau tutup proses TensorBoard lama.                                     |
 | TensorBoard tak mau jalan                                  | Set `TB_AUTO_LAUNCH=False` dan buka manual: `tensorboard --logdir artifacts/runs`.                     |
+| TensorBoard masih tampilkan data run lama                  | File event menumpuk + server lama nge-cache. Matikan server dulu, baru hapus `artifacts/runs/` — lihat **§7.1**. |
+| Kurva beberapa run tertumpuk jadi satu                     | Nama run (`--run-name`) dipakai ulang; file event di-merge. Pakai run-name unik tiap percobaan (**§7.1**). |
 
 ---
 

@@ -55,8 +55,8 @@ LAM_SCALE = 10.0
 
 SE_REDUCTION = 16        # rasio reduksi r (Hu et al., 2018)
 SE_INIT_BIAS = 3.0       # sigmoid(3) ≈ 0.953 -> SE awal mendekati identitas
-P_DROP = 0.8             # dropout cabang Block 1
-P_DROP_TOP = 0.8         # dropout Top Block
+P_DROP = 0.5             # dropout cabang Block 1
+P_DROP_TOP = 0.5         # dropout Top Block
 FUSION_ALPHA_INIT = 1.0
 TOP_POOL = 7
 TOP_DIMS = [TOP_POOL * TOP_POOL * 1024, 632, 512, 32]   # warisan notebook, TIDAK dipakai

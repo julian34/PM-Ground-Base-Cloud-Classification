@@ -70,7 +70,10 @@ def train_one_epoch(model, loader, optimizer, scaler, criterion, device,
     set_bn_beku_eval(model)
     bn = _bn_buffers(model)
     total_loss, correct, n, n_skip = 0.0, 0, 0, 0
-    for i, (x01, y) in enumerate(tqdm(loader, desc="Train", leave=False)):
+    yt, yp, run_f1 = [], [], 0.0                                   # akumulasi utk F1 makro train
+    # dynamic_ncols=True: lebar bar mengikuti kolom terminal -> tak pecah/dobel saat window diperkecil.
+    bar = tqdm(loader, desc=f"E{epoch:02d} train", leave=False, dynamic_ncols=True)
+    for i, (x01, y) in enumerate(bar):
         if DEBUG and i >= DEBUG_BATCHES:
             break
         x01, y = x01.to(device, non_blocking=True), y.to(device, non_blocking=True)
@@ -98,22 +101,34 @@ def train_one_epoch(model, loader, optimizer, scaler, criterion, device,
         nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
         scaler.step(optimizer)
         scaler.update()
+        pred = out.argmax(1)
         total_loss += loss.item() * x.size(0)
-        correct += (out.argmax(1) == y).sum().item()
+        correct += (pred == y).sum().item()
         n += x.size(0)
+        yt.append(y.detach().cpu())
+        yp.append(pred.detach().cpu())
+        if i % log_every == 0:                                 # F1 makro di-throttle (hemat biaya)
+            run_f1 = f1_score(torch.cat(yt).numpy(), torch.cat(yp).numpy(),
+                              average="macro", zero_division=0)
+        # Postfix ringkas: nilai berjalan Train. dynamic_ncols memangkas bila tak muat.
+        bar.set_postfix_str(
+            f"loss {total_loss / max(n, 1):.3f} acc {correct / max(n, 1):.3f} f1 {run_f1:.3f}")
         if writer is not None and i % log_every == 0:          # umpan balik cepat per-batch
             step = (epoch - 1) * len(loader) + i
             writer.add_scalar("Loss/train_step", loss.item(), step)
             writer.add_scalar("LR_step", optimizer.param_groups[0]["lr"], step)
             writer.flush()
-    return total_loss / max(n, 1), correct / max(n, 1)
+    tr_f1 = (f1_score(torch.cat(yt).numpy(), torch.cat(yp).numpy(),
+                      average="macro", zero_division=0) if yt else 0.0)
+    return total_loss / max(n, 1), correct / max(n, 1), tr_f1
 
 
 @torch.no_grad()
-def evaluate(model, loader, criterion, device):
+def evaluate(model, loader, criterion, device, desc="val"):
     model.eval()
-    total_loss, n, n_nan, yt, yp = 0.0, 0, 0, [], []
-    for i, (x01, y) in enumerate(loader):
+    total_loss, correct, n, n_nan, yt, yp = 0.0, 0, 0, 0, [], []
+    bar = tqdm(loader, desc=desc, leave=False, dynamic_ncols=True)
+    for i, (x01, y) in enumerate(bar):
         if DEBUG and i >= DEBUG_BATCHES:
             break
         x, lam = siapkan_batch(x01, device)
@@ -122,10 +137,13 @@ def evaluate(model, loader, criterion, device):
                             enabled=(device.type == "cuda")):
             out = model(x, lam).float()
         n_nan += int(not torch.isfinite(out).all())
+        pred = out.argmax(1)
         total_loss += criterion(out, y).item() * x.size(0)
+        correct += (pred == y).sum().item()
         yt.append(y.cpu())
-        yp.append(out.argmax(1).cpu())
+        yp.append(pred.cpu())
         n += x.size(0)
+        bar.set_postfix_str(f"loss {total_loss / max(n, 1):.3f} acc {correct / max(n, 1):.3f}")
     if n_nan:
         print(f"[!] {n_nan} batch validasi NaN — statistik BN kemungkinan tercemar")
     if n == 0:                                   # loader kosong / DEBUG_BATCHES=0
