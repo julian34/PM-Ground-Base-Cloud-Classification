@@ -34,6 +34,9 @@ def parse_args():
     p.add_argument("--data-root", type=Path, default=C.DATA_ROOT)
     p.add_argument("--epochs", type=int, default=C.EPOCHS)
     p.add_argument("--run-name", default=C.RUN_NAME)
+    p.add_argument("--seed", type=int, default=C.SEED,
+                   help="Seed acak. Untuk uji beberapa seed, pasangkan dengan "
+                        "--run-name berbeda agar checkpoint/log tidak saling menimpa.")
     p.add_argument("--resume", action="store_true", default=True)
     p.add_argument("--no-resume", dest="resume", action="store_false")
     p.add_argument("--test-per-class", type=int, default=None,
@@ -44,10 +47,10 @@ def parse_args():
 
 def main():
     args = parse_args()
-    set_seed(C.SEED)
+    set_seed(args.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() and not C.DEBUG else "cpu")
-    print(f"Device: {device} | DEBUG: {C.DEBUG} | SEED: {C.SEED}")
+    print(f"Device: {device} | DEBUG: {C.DEBUG} | SEED: {args.seed}")
 
     if not args.data_root.exists():
         raise SystemExit(
