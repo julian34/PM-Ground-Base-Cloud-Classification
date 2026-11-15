@@ -14,13 +14,18 @@ from .blocks import (
     DenseBlock1, DenseBlock2, DenseBlock3, DenseBlock4,
     TopBlock, TransitionLayer1, TransitionLayer2, TransitionLayer3,
 )
-from .config import ND_CH, NUM_CLASSES, USE_SE, USE_VIT, VIT_DIM
+from .config import (
+    CLOUDVIT_DROP, CLOUDVIT_GDEPTH, IMG_SIZE, ND_CH, NUM_CLASSES, USE_SE, USE_VIT,
+    VIT_ARCH, VIT_DIM, VIT_INPUT, VIT_PATCH, VIT_PATCH_RAW,
+)
+from .cloudvit_branch import CloudViTBranch
 from .losses import init_new_layers
 from .vit_branch import ViTBranch
 
 
 class CloudDenseNet(nn.Module):
-    def __init__(self, growth_rate=32, n_cls=NUM_CLASSES, top_hidden=None, use_vit=USE_VIT):
+    def __init__(self, growth_rate=32, n_cls=NUM_CLASSES, top_hidden=None, use_vit=USE_VIT,
+                 vit_input=VIT_INPUT, vit_arch=VIT_ARCH):
         super().__init__()
         kw = dict(growth_rate=growth_rate, nd=ND_CH, use_se=USE_SE)
 
@@ -51,15 +56,32 @@ class CloudDenseNet(nn.Module):
         self.se4, self.sa4 = SEBlock(1024), SpatialAttnBR()
         self.norm5 = nn.BatchNorm2d(1024)
 
-        # ===== Cabang ViT (opsional) =====
-        # Dibangun hanya bila use_vit=True. Membaca peta stem (64 channel) dan
-        # menghasilkan vektor VIT_DIM yang di-concat sebelum Top Block.
+        # ===== Cabang B (opsional) =====
+        # Dibangun hanya bila use_vit=True. Arsitektur dipilih lewat vit_arch:
+        #   "cloudvit" -> backbone CloudViT penuh (I/D/E/G_Module), baca citra mentah,
+        #                 jalur INDEPENDEN dari DenseNet, keluaran 256-dim.
+        #   "simple"   -> ViT kecil; sumber input lewat vit_input:
+        #                   "stem" -> peta stem (64 ch, 56x56), berbagi konvolusi awal.
+        #                   "raw"  -> citra mentah (3 ch, IMG_SIZE), jalur independen.
+        # Keluaran cabang di-concat (fusi) sebelum Top Block via extra_dim.
         self.use_vit = use_vit
-        if use_vit:
-            self.vit = ViTBranch(in_channels=64)
+        self.vit_arch = vit_arch
+        if use_vit and vit_arch == "cloudvit":
+            self.vit = CloudViTBranch(gdepth=CLOUDVIT_GDEPTH, drop=CLOUDVIT_DROP)
+            self.vit_input = "raw"                   # CloudViT selalu baca citra mentah
+            extra_dim = self.vit.out_dim             # 256
+        elif use_vit:                                # vit_arch == "simple"
+            self.vit_input = vit_input
+            if vit_input == "raw":
+                self.vit = ViTBranch(in_channels=3, patch=VIT_PATCH_RAW, input_size=IMG_SIZE)
+            elif vit_input == "stem":
+                self.vit = ViTBranch(in_channels=64, patch=VIT_PATCH, input_size=IMG_SIZE // 4)
+            else:
+                raise ValueError(f"VIT_INPUT tak dikenal: {vit_input!r} (pakai 'stem' atau 'raw')")
             extra_dim = VIT_DIM
         else:
             self.vit = None
+            self.vit_input = None
             extra_dim = 0
 
         # ===== Top Block =====
@@ -100,9 +122,15 @@ class CloudDenseNet(nn.Module):
         b4 = self.sa4(self.se4(self.block4(t3)), lam)             # (B, 1024, 7, 7)
         out = F.relu(self.norm5(b4))
 
-        # --- Cabang B: ViT (opsional) dari peta stem yang sama ---
+        # --- Cabang B: ViT (opsional) ---
+        # Sumber input tergantung mode: "raw" -> citra mentah x (jalur independen),
+        # "stem" -> peta stem s (berbagi konvolusi awal).
         # vec_vit = None bila ViT nonaktif -> Top Block berperilaku lama.
-        vec_vit = self.vit(s) if self.vit is not None else None   # (B, VIT_DIM) | None
+        if self.vit is not None:
+            vit_in = x if self.vit_input == "raw" else s
+            vec_vit = self.vit(vit_in)                            # (B, VIT_DIM)
+        else:
+            vec_vit = None
 
         # --- Fusi: Top Block meng-GAP 'out' lalu concat dgn vec_vit ---
         logits = self.top(out, extra=vec_vit)                     # (B, n_cls)

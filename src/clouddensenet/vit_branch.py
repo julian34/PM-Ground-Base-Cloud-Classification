@@ -1,10 +1,17 @@
 """Cabang Vision Transformer (ViT) sederhana untuk CloudDenseNet.
 
-Cabang ini berjalan PARALEL dengan backbone DenseNet. Input-nya BUKAN citra
-mentah, melainkan peta fitur hasil stem / konvolusi pertama, yaitu tensor
-berukuran (B, 64, 56, 56). Alur singkatnya:
+Cabang ini berjalan PARALEL dengan backbone DenseNet. Sumber inputnya dapat
+dipilih (lihat `VIT_INPUT` di config.py):
 
-    peta stem (B,64,56,56)
+  * "stem" — membaca peta fitur hasil stem (B, 64, 56, 56). Berbagi konvolusi
+    awal dengan DenseNet; token sedikit (mis. 49) → murah.
+  * "raw"  — membaca CITRA MENTAH (B, 3, 224, 224) secara mandiri, sehingga ViT
+    dan DenseNet menjadi DUA JALUR SEPENUHNYA INDEPENDEN yang baru bertemu
+    (fusi concat) di Top Block. Token lebih banyak (mis. 196 pada patch=16).
+
+Alur singkatnya (sama untuk kedua mode, beda hanya tensor masukannya):
+
+    peta masukan (B, C, H, H)
       -> patch-embed (satu Conv) -> deretan token
       -> tambah token CLS + embedding posisi
       -> TransformerEncoder (bawaan PyTorch)
@@ -28,18 +35,22 @@ class ViTBranch(nn.Module):
     """ViT kecil: ubah peta fitur stem menjadi satu vektor ringkasan (B, dim)."""
 
     def __init__(self, in_channels=64, dim=VIT_DIM, depth=VIT_DEPTH, heads=VIT_HEADS,
-                 patch=VIT_PATCH, mlp_ratio=VIT_MLP_RATIO, drop=VIT_DROP):
+                 patch=VIT_PATCH, mlp_ratio=VIT_MLP_RATIO, drop=VIT_DROP,
+                 input_size=IMG_SIZE // 4):
         super().__init__()
         self.dim = dim
 
-        # Ukuran peta stem = IMG_SIZE / 4 (conv7x7 stride2 lalu maxpool stride2).
-        # Contoh: 224 -> 56. Jumlah token = (56 / patch)^2, mis. (56/8)^2 = 49.
-        stem_size = IMG_SIZE // 4
-        grid = stem_size // patch
+        # `input_size` = sisi (H=W) peta masukan ViT:
+        #   * mode "stem": IMG_SIZE // 4 (conv7x7 s2 + maxpool s2). Contoh 224 -> 56.
+        #   * mode "raw" : IMG_SIZE penuh (mis. 224), in_channels=3.
+        # Jumlah token = (input_size / patch)^2. Mis. 56/8=7 -> 49; atau 224/16=14 -> 196.
+        assert input_size % patch == 0, (
+            f"input_size ({input_size}) harus habis dibagi patch ({patch})")
+        grid = input_size // patch
         num_patches = grid * grid
 
         # 1) Patch embedding: satu Conv ber-stride=patch memecah peta jadi token.
-        #    (B, C, 56, 56) -> (B, dim, grid, grid). Tiap sel grid = 1 token.
+        #    (B, C, S, S) -> (B, dim, grid, grid). Tiap sel grid = 1 token.
         self.patch_embed = nn.Conv2d(in_channels, dim, kernel_size=patch, stride=patch)
 
         # 2) Token CLS: satu token belajar yang akan meringkas seluruh gambar.
@@ -63,7 +74,7 @@ class ViTBranch(nn.Module):
         self.norm = nn.LayerNorm(dim)
 
     def forward(self, x):
-        # x: peta fitur stem (B, C, 56, 56).
+        # x: peta masukan (B, C, S, S) — peta stem atau citra mentah sesuai mode.
         B = x.shape[0]
 
         t = self.patch_embed(x)                   # (B, dim, grid, grid)
