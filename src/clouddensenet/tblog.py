@@ -156,11 +156,21 @@ def catat_epoch(writer, epoch, tr_loss, tr_acc, va_loss, va_acc, va_f1, lr):
     """Tulis scalar satu epoch. No-op bila writer None."""
     if writer is None:
         return
-    # Satu chart "Loss" berisi 2 garis (train & val). add_scalars (jamak) membuat
-    # sub-run Loss_train / Loss_val yang bisa dimatikan satu-satu lewat checkbox
-    # di sidebar TensorBoard — jadi grafik dinamis dalam satu canvas.
-    writer.add_scalars("Loss", {"train": tr_loss, "val": va_loss}, epoch)
-    writer.add_scalars("Acc", {"train": tr_acc, "val": va_acc}, epoch)
+    # Pakai add_scalar (tunggal) dengan tag ber-"/". Alasan (memperbaiki bug
+    # perbandingan antar-run + sidebar membanjir):
+    #   * add_scalars (jamak) diam-diam membuat SUB-FOLDER <run>/Loss_train,
+    #     <run>/Loss_val, <run>/Acc_train, ... Tiap subfolder dianggap "run"
+    #     tersendiri oleh TensorBoard, sehingga: (a) sidebar kiri penuh checkbox
+    #     (run x 4+), dan (b) data satu run terpecah -> run terbaru TIDAK bisa
+    #     dioverlay-bandingkan dengan run lampau pada chart yang sama.
+    #   * Dengan add_scalar + tag "Loss/train" & "Loss/val", tiap run tetap SATU
+    #     entri di sidebar. Untuk membandingkan train lama vs baru: centang
+    #     beberapa run di sidebar -> semuanya menumpuk di chart "Loss/train" yang
+    #     sama. TensorBoard juga mengelompokkan train & val di bawah seksi "Loss".
+    writer.add_scalar("Loss/train", tr_loss, epoch)
+    writer.add_scalar("Loss/val", va_loss, epoch)
+    writer.add_scalar("Acc/train", tr_acc, epoch)
+    writer.add_scalar("Acc/val", va_acc, epoch)
     writer.add_scalar("F1/val", va_f1, epoch)
     writer.add_scalar("LR", lr, epoch)
     writer.flush()
