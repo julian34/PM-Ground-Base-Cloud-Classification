@@ -156,10 +156,11 @@ def catat_epoch(writer, epoch, tr_loss, tr_acc, va_loss, va_acc, va_f1, lr):
     """Tulis scalar satu epoch. No-op bila writer None."""
     if writer is None:
         return
-    writer.add_scalar("Loss/train", tr_loss, epoch)
-    writer.add_scalar("Loss/val", va_loss, epoch)
-    writer.add_scalar("Acc/train", tr_acc, epoch)
-    writer.add_scalar("Acc/val", va_acc, epoch)
+    # Satu chart "Loss" berisi 2 garis (train & val). add_scalars (jamak) membuat
+    # sub-run Loss_train / Loss_val yang bisa dimatikan satu-satu lewat checkbox
+    # di sidebar TensorBoard — jadi grafik dinamis dalam satu canvas.
+    writer.add_scalars("Loss", {"train": tr_loss, "val": va_loss}, epoch)
+    writer.add_scalars("Acc", {"train": tr_acc, "val": va_acc}, epoch)
     writer.add_scalar("F1/val", va_f1, epoch)
     writer.add_scalar("LR", lr, epoch)
     writer.flush()
