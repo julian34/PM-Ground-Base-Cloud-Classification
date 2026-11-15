@@ -15,7 +15,7 @@ from pathlib import Path
 # --------------------------------------------------------------------------- #
 DEBUG = False           # True = uji cepat di CPU, False = training penuh (GPU)
 DEBUG_BATCHES = 3       # jumlah batch per epoch saat DEBUG
-SEED = 42
+SEED = 42               # seed untuk random, numpy, torch, dll Default: 42
 
 # --------------------------------------------------------------------------- #
 # Data
