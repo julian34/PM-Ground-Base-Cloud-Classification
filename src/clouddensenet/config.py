@@ -53,12 +53,12 @@ BRANCH_PAPER = False
 ND_CH = 8
 LAM_SCALE = 10.0
 
-SE_REDUCTION = 16        # rasio reduksi r (Hu et al., 2018)
-SE_INIT_BIAS = 3.0       # sigmoid(3) ≈ 0.953 -> SE awal mendekati identitas
-P_DROP = 0.5             # dropout cabang Block 1
-P_DROP_TOP = 0.5         # dropout Top Block
-FUSION_ALPHA_INIT = 1.0
-TOP_POOL = 7
+SE_REDUCTION        = 16        # rasio reduksi r (Hu et al., 2018)
+SE_INIT_BIAS        = 3.0       # sigmoid(3) ≈ 0.953 -> SE awal mendekati identitas
+P_DROP              = 0.3       # dropout cabang Block 1
+P_DROP_TOP          = 0.3       # dropout Top Block
+FUSION_ALPHA_INIT   = 1.0
+TOP_POOL            = 7
 TOP_DIMS = [TOP_POOL * TOP_POOL * 1024, 632, 512, 32]   # warisan notebook, TIDAK dipakai
 # Lebar lapisan tersembunyi Top Block: 1024 -> TOP_HIDDEN... -> NUM_CLASSES.
 # Checkpoint lama memakai head berbeda (07/08/11-11: 512,128,32,16; 12-11: 512,32);
