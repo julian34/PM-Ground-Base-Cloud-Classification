@@ -1,0 +1,8 @@
+# Output training ALGA — jangan di-commit
+__pycache__/
+*.pyc
+*.log
+training_log.log
+*.pth
+*.pt
+*.png
