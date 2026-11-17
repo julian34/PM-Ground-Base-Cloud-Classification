@@ -34,6 +34,9 @@ def parse_args():
     p.add_argument("--data-root", type=Path, default=C.DATA_ROOT)
     p.add_argument("--epochs", type=int, default=C.EPOCHS)
     p.add_argument("--run-name", default=C.RUN_NAME)
+    p.add_argument("--seed", type=int, default=C.SEED,
+                   help="Seed acak. Untuk uji beberapa seed, pasangkan dengan "
+                        "--run-name berbeda agar checkpoint/log tidak saling menimpa.")
     p.add_argument("--resume", action="store_true", default=True)
     p.add_argument("--no-resume", dest="resume", action="store_false")
     p.add_argument("--test-per-class", type=int, default=None,
@@ -44,10 +47,10 @@ def parse_args():
 
 def main():
     args = parse_args()
-    set_seed(C.SEED)
+    set_seed(args.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() and not C.DEBUG else "cpu")
-    print(f"Device: {device} | DEBUG: {C.DEBUG} | SEED: {C.SEED}")
+    print(f"Device: {device} | DEBUG: {C.DEBUG} | SEED: {args.seed}")
 
     if not args.data_root.exists():
         raise SystemExit(
@@ -106,8 +109,8 @@ def main():
                   f"lr {_lr:g} | trainable {n_tr:,}")
 
         t0 = time.time()
-        tr_loss, tr_acc = train_one_epoch(model, train_loader, optimizer, scaler, criterion, device,
-                                          writer=writer, epoch=epoch)
+        tr_loss, tr_acc, tr_f1 = train_one_epoch(model, train_loader, optimizer, scaler, criterion,
+                                                 device, writer=writer, epoch=epoch)
         va_loss, va_acc, va_f1 = evaluate(model, val_loader, criterion, device)
 
         if not is_finite(tr_loss, va_loss):
@@ -121,7 +124,7 @@ def main():
         catat_epoch(writer, epoch, tr_loss, tr_acc, va_loss, va_acc, va_f1, lr_now)
         epoch_logger.catat(epoch, phase, tr_loss, tr_acc, va_loss, va_acc, va_f1, lr_now, dt)
         print(f"Epoch {epoch:02d}/{args.epochs} [tahap {phase}] | "
-              f"train loss {tr_loss:.4f} acc {tr_acc:.3f} | "
+              f"train loss {tr_loss:.4f} acc {tr_acc:.3f} f1 {tr_f1:.3f} | "
               f"val loss {va_loss:.4f} acc {va_acc:.3f} f1 {va_f1:.3f} | {dt:.0f}s")
 
         if va_f1 > best_f1:

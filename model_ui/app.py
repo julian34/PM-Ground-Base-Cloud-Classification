@@ -9,11 +9,12 @@ Endpoint:
 
 Jalankan:
     uvicorn model_ui.app:app --port 8000     # dengan --reload saat dev
-    python -m model_ui.app
+    python -m model_ui.app                    # host 0.0.0.0 (akses LAN/hotspot) + cetak alamat
 """
 from __future__ import annotations
 
 import io
+import socket
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -154,9 +155,37 @@ async def predict_batch(
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
 
-def main() -> None:
+def _alamat_lokal() -> list[str]:
+    """IPv4 lokal (non-loopback) untuk ditampilkan saat start.
+
+    Hotspot Windows (192.168.137.1) diprioritaskan karena itu alamat yang dipakai
+    perangkat yang tersambung ke hotspot laptop.
+    """
+    ips: list[str] = []
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip not in ips and not ip.startswith("127."):
+                ips.append(ip)
+    except socket.gaierror:
+        pass
+    ips.sort(key=lambda s: (not s.startswith("192.168.137."), s))
+    return ips
+
+
+def main(host: str = "0.0.0.0", port: int = 8000) -> None:
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+
+    # host 0.0.0.0 = listen di semua antarmuka -> bisa diakses perangkat lain di
+    # LAN/hotspot (bukan hanya laptop ini). Cetak alamat agar mudah dibuka dari HP.
+    print("\nCloudDenseNet UI aktif. Buka salah satu alamat berikut:")
+    print(f"  Laptop ini (lokal) : http://127.0.0.1:{port}")
+    for ip in _alamat_lokal():
+        label = "Hotspot/LAN" if ip.startswith("192.168.137.") else "LAN"
+        print(f"  {label:<18} : http://{ip}:{port}")
+    print("  (perangkat lain harus tersambung ke jaringan/hotspot yang sama;")
+    print("   bila gagal padahal lokal jalan, cek Windows Firewall port tsb.)\n")
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":

@@ -35,6 +35,16 @@ def test_return_all_keys():
         assert key in out, key
 
 
+def test_forward_vit_branch():
+    # Aktifkan cabang ViT lewat parameter (tanpa mengubah config global).
+    # Output harus tetap (N, 7) walau ada cabang + fusi tambahan.
+    model = CloudDenseNet(use_vit=True).eval()
+    x = torch.randn(2, 3, C.IMG_SIZE, C.IMG_SIZE)
+    with torch.no_grad():
+        logits = model(x)
+    assert logits.shape == (2, C.NUM_CLASSES), logits.shape
+
+
 if __name__ == "__main__":
     test_forward_shape()
     test_return_all_keys()

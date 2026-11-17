@@ -40,7 +40,7 @@ def plot_confusion_matrix(model, loader, device, classes=None, simpan=None):
     model.eval()
     classes = classes or loader.dataset.classes
     y_true, y_pred = [], []
-    for x, y in tqdm(loader, desc="Confusion Matrix", leave=False):
+    for x, y in tqdm(loader, desc="conf-mat", leave=False, dynamic_ncols=True):
         x, lam = siapkan_batch(x, device)
         with torch.autocast(device_type=device.type, enabled=(device.type == "cuda")):
             pred = model(x, lam).argmax(1)

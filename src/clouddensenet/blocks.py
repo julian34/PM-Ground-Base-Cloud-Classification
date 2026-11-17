@@ -117,14 +117,19 @@ class TopBlock(nn.Module):
     tetap bisa dimuat.
     """
 
-    def __init__(self, in_channels=1024, n_cls=NUM_CLASSES, p=P_DROP_TOP, hidden=None):
+    def __init__(self, in_channels=1024, n_cls=NUM_CLASSES, p=P_DROP_TOP, hidden=None,
+                 extra_dim=0):
         super().__init__()
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.flatten = nn.Flatten()
 
+        # extra_dim = lebar vektor cabang tambahan (mis. ViT) yang di-concat ke
+        # vektor DenseNet sebelum MLP. extra_dim=0 -> perilaku lama persis.
+        self.extra_dim = extra_dim
+
         hidden = tuple(TOP_HIDDEN if hidden is None else hidden)
         self.hidden = hidden
-        lapisan, d_in = [], in_channels
+        lapisan, d_in = [], in_channels + extra_dim      # +extra_dim utk fusi concat
         for d_out in hidden:
             lapisan += [nn.Linear(d_in, d_out), nn.BatchNorm1d(d_out), nn.ReLU(inplace=True)]
             d_in = d_out
@@ -132,8 +137,10 @@ class TopBlock(nn.Module):
         self.bottleneck = nn.Sequential(*lapisan)
         self.fc = nn.Linear(d_in, n_cls)
 
-    def forward(self, x):
-        x = self.global_pool(x)   # [B, 1024, 1, 1]
-        x = self.flatten(x)       # [B, 1024]
-        x = self.bottleneck(x)    # [B, hidden[-1]]
-        return self.fc(x)         # [B, n_cls] (logits untuk CrossEntropy/Focal)
+    def forward(self, x, extra=None):
+        x = self.global_pool(x)        # [B, 1024, 1, 1]
+        x = self.flatten(x)            # [B, 1024]
+        if extra is not None:          # fusi: gabung vektor DenseNet + vektor cabang
+            x = torch.cat([x, extra], dim=1)   # [B, 1024 + extra_dim]
+        x = self.bottleneck(x)         # [B, hidden[-1]]
+        return self.fc(x)              # [B, n_cls] (logits untuk CrossEntropy/Focal)

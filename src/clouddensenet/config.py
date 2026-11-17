@@ -15,7 +15,7 @@ from pathlib import Path
 # --------------------------------------------------------------------------- #
 DEBUG = False           # True = uji cepat di CPU, False = training penuh (GPU)
 DEBUG_BATCHES = 3       # jumlah batch per epoch saat DEBUG
-SEED = 42
+SEED = 42               # seed untuk random, numpy, torch, dll Default: 42
 
 # --------------------------------------------------------------------------- #
 # Data
@@ -53,18 +53,46 @@ BRANCH_PAPER = False
 ND_CH = 8
 LAM_SCALE = 10.0
 
-SE_REDUCTION = 16        # rasio reduksi r (Hu et al., 2018)
-SE_INIT_BIAS = 3.0       # sigmoid(3) ≈ 0.953 -> SE awal mendekati identitas
-P_DROP = 0.8             # dropout cabang Block 1
-P_DROP_TOP = 0.8         # dropout Top Block
-FUSION_ALPHA_INIT = 1.0
-TOP_POOL = 7
+SE_REDUCTION        = 16        # rasio reduksi r (Hu et al., 2018)
+SE_INIT_BIAS        = 3.0       # sigmoid(3) ≈ 0.953 -> SE awal mendekati identitas
+P_DROP              = 0.8       # dropout cabang Block 1
+P_DROP_TOP          = 0.8       # dropout Top Block
+FUSION_ALPHA_INIT   = 1.0
+TOP_POOL            = 7
 TOP_DIMS = [TOP_POOL * TOP_POOL * 1024, 632, 512, 32]   # warisan notebook, TIDAK dipakai
 # Lebar lapisan tersembunyi Top Block: 1024 -> TOP_HIDDEN... -> NUM_CLASSES.
 # Checkpoint lama memakai head berbeda (07/08/11-11: 512,128,32,16; 12-11: 512,32);
 # inferensi membaca dimensi dari checkpoint (lihat checkpoint.dimensi_top).
-TOP_HIDDEN = (512, 128, 32, 16)
+TOP_HIDDEN = (512, 128, 32, 16) # default: (512, 128, 32, 16)
 BRANCH_DIMS = [256, 2048, 1024]
+
+# --------------------------------------------------------------------------- #
+# Cabang ViT (opsional) — model dua-cabang: DenseNet + ViT
+# --------------------------------------------------------------------------- #
+# Bila USE_VIT=True, aliran bercabang dua lalu difusi (concat) di Top Block:
+#   Cabang A = backbone DenseNet (seperti biasa) -> vektor 1024
+#   Cabang B = ViT kecil -> vektor VIT_DIM
+#
+# VIT_INPUT menentukan DARI MANA cabang ViT membaca:
+#   "stem" -> dari peta stem (B,64,56,56). Berbagi konvolusi awal dgn DenseNet;
+#             titik fork setelah stem. Token sedikit (49 @ patch 8) -> murah.
+#   "raw"  -> dari CITRA MENTAH (B,3,224,224). ViT & DenseNet jadi DUA JALUR
+#             SEPENUHNYA INDEPENDEN, baru bertemu di Top Block. Memakai
+#             VIT_PATCH_RAW (196 token @ patch 16) -> lebih mahal, lebih setia detail.
+USE_VIT = True          # True = aktifkan cabang ViT paralel
+VIT_ARCH = "cloudvit"   # "simple" (ViTBranch) | "cloudvit" (backbone CloudViT penuh)
+VIT_INPUT = "raw"       # untuk VIT_ARCH="simple": "stem"|"raw". (cloudvit selalu raw)
+VIT_DIM = 192            # dimensi embedding/token ViT (kecil agar tak mudah overfit)
+VIT_DEPTH = 4            # jumlah lapis TransformerEncoder
+VIT_HEADS = 4            # jumlah attention head (VIT_DIM harus habis dibagi angka ini)
+VIT_PATCH = 8            # ukuran patch mode "stem" pada peta 56x56 -> 7x7 = 49 token
+VIT_PATCH_RAW = 16       # ukuran patch mode "raw" pada citra 224x224 -> 14x14 = 196 token
+VIT_MLP_RATIO = 2.0      # lebar hidden MLP di dalam encoder = VIT_DIM x rasio ini
+VIT_DROP = 0.1           # dropout di dalam cabang ViT
+
+# Khusus VIT_ARCH="cloudvit" (backbone CloudViT: I/D/E/G_Module, keluaran 256-dim):
+CLOUDVIT_GDEPTH = 1      # jumlah blok transformer separable di tiap G_Module (Gbr 5: 1)
+CLOUDVIT_DROP = 0.1      # dropout di dalam G_Module (transformer + MLP)
 
 # --------------------------------------------------------------------------- #
 # Optimasi (AdamW + Focal Loss)
@@ -98,7 +126,7 @@ PHASES = [
     (80, 1e-6, "full",    "Full Defrost (end-to-end)"),
 ]
 
-BATCH_SIZE = 2 if DEBUG else 8
+BATCH_SIZE = 2 if DEBUG else 32
 EPOCHS = PHASES[-1][0]
 EPOCH_LIMIT = None           # None = jadwal penuh
 

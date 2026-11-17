@@ -26,6 +26,7 @@ from .losses import FocalLoss, init_new_layers, lecun_uniform_
 from .model import CloudDenseNet
 from .pretrained import muat_imagenet, nolkan_input_nd
 from .spectral import br_ratio_lambda, lambda_relatif, valid_mask
+from .vit_branch import ViTBranch
 from .tblog import catat_epoch, hentikan_server, siapkan_tensorboard, tutup_tensorboard
 
 __all__ = [
@@ -34,7 +35,7 @@ __all__ = [
     "ambil_state_dict", "dimensi_top", "bangun_dari_checkpoint",
     "DenseLayer", "DenseBlock1", "DenseBlock2", "DenseBlock3", "DenseBlock4",
     "TransitionLayer1", "TransitionLayer2", "TransitionLayer3", "TopBlock",
-    "SEBlock", "SpatialAttn", "SpatialAttnBR", "EdgeLayer", "SCConv",
+    "SEBlock", "SpatialAttn", "SpatialAttnBR", "EdgeLayer", "SCConv", "ViTBranch",
     "FocalLoss", "init_new_layers", "lecun_uniform_",
     "muat_imagenet", "nolkan_input_nd",
     "bekukan_imagenet", "buka_blok_3_4", "buka_semua", "set_bn_beku_eval",
