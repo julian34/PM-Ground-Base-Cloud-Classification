@@ -63,7 +63,7 @@ TOP_DIMS = [TOP_POOL * TOP_POOL * 1024, 632, 512, 32]   # warisan notebook, TIDA
 # Lebar lapisan tersembunyi Top Block: 1024 -> TOP_HIDDEN... -> NUM_CLASSES.
 # Checkpoint lama memakai head berbeda (07/08/11-11: 512,128,32,16; 12-11: 512,32);
 # inferensi membaca dimensi dari checkpoint (lihat checkpoint.dimensi_top).
-TOP_HIDDEN = (512, 32) # default: (512, 128, 32, 16)
+TOP_HIDDEN = (512, 128, 32, 16) # default: (512, 128, 32, 16)
 BRANCH_DIMS = [256, 2048, 1024]
 
 # --------------------------------------------------------------------------- #
