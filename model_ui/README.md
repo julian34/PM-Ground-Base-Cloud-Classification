@@ -27,12 +27,24 @@ pip install -e .                           # agar paket clouddensenet ter-import
 Start server (salah satu):
 
 ```bash
-uvicorn model_ui.app:app --port 8000       # tambahkan --reload saat dev
-python -m model_ui.app                      # host 127.0.0.1, port 8000
+uvicorn model_ui.app:app --port 8000       # host 127.0.0.1 saja; tambahkan --reload saat dev
+python -m model_ui.app                      # host 0.0.0.0 (akses LAN/hotspot) + cetak alamat
 ```
 
 Buka **http://127.0.0.1:8000** (satu citra) atau **/batch** (satu folder) di browser.
 Tautan antar-mode tersedia di pojok kanan atas tiap halaman.
+
+### Akses dari perangkat lain (LAN / hotspot laptop)
+
+`python -m model_ui.app` sudah listen di `0.0.0.0` dan mencetak alamat yang bisa
+dibuka dari HP/perangkat lain pada jaringan yang sama (hotspot Windows biasanya
+**http://192.168.137.1:8000**). Bila dari perangkat lain gagal padahal lokal jalan,
+izinkan port lewat Windows Firewall (PowerShell Administrator, sekali saja):
+
+```powershell
+New-NetFirewallRule -DisplayName "CloudDenseNet UI 8000" -Direction Inbound `
+  -Protocol TCP -LocalPort 8000 -Action Allow -Profile Any
+```
 
 ## Endpoint API
 
