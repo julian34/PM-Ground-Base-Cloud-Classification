@@ -145,6 +145,22 @@ DATA_ROOT = DATA_DIR / "processed"
 CKPT_DIR = PROJECT_DIR / "artifacts" / "checkpoints"
 RESULT_DIR = PROJECT_DIR / "artifacts" / "results"
 
+# --------------------------------------------------------------------------- #
+# Penelitian B — dataset BERBEDA, split ulang terpisah.
+# Dataset asli di DATA_ROOT/{train,val,test} TIDAK disentuh. Eksperimen ini:
+#   1) ekstrak DATASET_B_ZIP (struktur per-kelas),
+#   2) gabung semua gambar jadi satu pool per-kelas (DATASET_B_ROOT/_merged/<kelas>),
+#   3) split 3-arah stratified & seeded -> DATASET_B_ROOT/{train,val,test}/<kelas>.
+# Jalankan : python scripts/split_dataset_experiment.py
+# Training : python scripts/train.py --data-root data/processed/dataset_b
+# --------------------------------------------------------------------------- #
+DATASET_B_NAME  = "dataset_b"                          # sub-folder di data/processed/
+DATASET_B_ZIP   = DATA_DIR / "raw" / "dataset_b.zip"   # arsip dataset baru (per-kelas)
+DATASET_B_ROOT  = DATA_ROOT / DATASET_B_NAME           # output: processed/dataset_b/{train,val,test}
+# Rasio split ulang (train, val, test) — ISI jumlah aktual di sini. Harus berjumlah 1.0.
+DATASET_B_SPLIT = (0.70, 0.20, 0.10)
+DATASET_B_SEED  = SEED                                 # reproducible (default 42)
+
 VERSION = "_Versi01"
 RUN_NAME = "cloud"
 

@@ -168,6 +168,40 @@ Detail lengkap (angka nyata per kelas, logika split, reproducibility):
 **[`data/README.md`](data/README.md)** · **[`docs/DATASET_SPLIT.md`](docs/DATASET_SPLIT.md)**
 · **[`TRAINING.md`](TRAINING.md)** §5.
 
+### Penelitian B: dataset berbeda (split ulang terpisah)
+
+Untuk penelitian dengan **dataset lain** tanpa mengubah dataset GCD asli, gunakan
+`scripts/split_dataset_experiment.py`. Berbeda dari `split_dataset.py` (yang
+meng-carve val dari train yang sudah ter-split), script ini:
+
+1. **ekstrak** arsip dataset baru (struktur per-kelas),
+2. **gabung** semua gambar jadi satu pool per-kelas (`_merged/<kelas>/`) — struktur
+   bersarang apa pun (mis. `train/` + `test/`) dikelompokkan berdasarkan nama kelas,
+3. **split ulang 3-arah** (train/val/test) *stratified* & *seeded*.
+
+Hasilnya masuk ke **sub-folder terpisah** `data/processed/dataset_b/{train,val,test}`,
+jadi `data/processed/{train,val,test}` asli **tidak tersentuh**. Script menolak
+berjalan bila output bukan sub-folder di dalam `data/processed` (dataset asli aman).
+
+```bash
+# 1. letakkan arsip dataset baru di:
+#    data/raw/dataset_b.zip
+# 2. (opsional) atur rasio split di config.py -> DATASET_B_SPLIT = (train, val, test)
+# 3. jalankan:
+python scripts/split_dataset_experiment.py                 # ekstrak + gabung + split (copy)
+python scripts/split_dataset_experiment.py --move          # pindah file (hemat disk)
+python scripts/split_dataset_experiment.py --keep-merged   # simpan pool _merged
+python scripts/split_dataset_experiment.py --force         # timpa data/processed/dataset_b
+# 4. latih di dataset baru (tanpa ubah DATA_ROOT global):
+python scripts/train.py --data-root data/processed/dataset_b
+```
+
+Konfigurasi di `config.py` (blok `DATASET_B_*`): `DATASET_B_NAME` (nama sub-folder),
+`DATASET_B_ZIP` (arsip sumber), `DATASET_B_ROOT` (output), `DATASET_B_SPLIT`
+(rasio train/val/test, harus = 1.0), `DATASET_B_SEED` (reproducible, default `SEED`).
+Argumen CLI: `--zip`, `--out`, `--split TR VA TE`, `--seed`, `--move`,
+`--keep-merged`, `--force`.
+
 ## Training
 
 ```bash

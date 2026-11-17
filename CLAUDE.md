@@ -45,12 +45,14 @@ Top Block ringkas, **Focal Loss** (γ=2.0), dan fine-tuning ImageNet bertahap.
 │   └── viz.py                # kurva training & confusion matrix
 ├── scripts/
 │   ├── train.py              # entrypoint training (baca config.py)
-│   └── split_dataset.py      # ekstrak GCD.zip + split train/val/test (stratified)
+│   ├── split_dataset.py      # ekstrak GCD.zip + split train/val/test (stratified)
+│   └── split_dataset_experiment.py   # dataset BERBEDA: ekstrak+gabung per-kelas+split 3-arah -> processed/dataset_b/
 ├── tests/test_forward.py     # smoke test (tanpa dataset/GPU)
 ├── data/                     # dataset — TIDAK di-commit (lihat .gitignore)
 │   ├── raw/GCD.zip           # arsip asli (JANGAN dipindah/hapus)
 │   ├── raw/GCD/{train,test}  # hasil ekstrak (cadangan, jangan diubah)
-│   └── processed/{train,val,test}/<kelas>/   # dataset siap latih (split jadi)
+│   ├── processed/{train,val,test}/<kelas>/   # dataset GCD siap latih (split jadi)
+│   └── processed/dataset_b/{train,val,test}/<kelas>/   # penelitian B — dataset berbeda (terpisah)
 ├── artifacts/{checkpoints,results}/   # keluaran training — tidak di-commit
 ├── configs/                  # konfigurasi tersimpan (opsional, saat ini kosong)
 ├── Backup/                   # SENGAJA TIDAK DISENTUH / tidak di-commit
