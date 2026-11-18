@@ -32,7 +32,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # dataset_b = gabungan GCD train+test (19k gambar), SUDAH di-split 70/20/10 SEBELUM augmentasi
 # (persis metodologi paper ALGA). Jadi kita pakai split train/val/test yang sudah ada LANGSUNG,
 # TANPA split ulang. Root berisi subfolder: train/ val/ test/ (masing-masing 7 kelas).
-dataset_root = r'D:\citra awan\PM\data\processed\dataset_b'
+dataset_root = r'C:\Users\JARDMG\Documents\cloud-class\data\processed\dataset_b'
 
 def remove_hidden_folders(path):
     """Remove hidden folders from dataset path"""
@@ -430,9 +430,9 @@ if __name__ == "__main__":
     # batch_size 32/16/32 (sesuai paper/repo asli ALGA). CATATAN: butuh GPU VRAM besar
     # (>= ~16 GB). Di GPU 8 GB akan CUDA OutOfMemory -> turunkan ke 8 bila dijalankan di PC kecil.
     # num_workers=0 agar aman di Windows (hindari masalah multiprocessing DataLoader)
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=0)
-    validation_loader = DataLoader(validation_dataset, batch_size=16, shuffle=False, num_workers=0)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=0)
+    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=0)
+    validation_loader = DataLoader(validation_dataset, batch_size=8, shuffle=False, num_workers=0)
+    test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=0)
 
     model = ALGA_DenseNet(num_classes=7).to(device)
 
