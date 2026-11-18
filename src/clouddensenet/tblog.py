@@ -94,7 +94,14 @@ def _jalankan_server(log_dir: Path, port: int, host: str = "127.0.0.1") -> None:
         _log_handle = open(log_file, "w", encoding="utf-8")  # noqa: SIM115 — diwarisi anak
         _server_proc = subprocess.Popen(
             [sys.executable, "-m", "tensorboard.main",
-             "--logdir", str(log_dir), "--host", host, "--port", str(port)],
+             "--logdir", str(log_dir), "--host", host, "--port", str(port),
+             # Resume SELALU membuat event file BARU di folder run yang sama
+             # (SummaryWriter tak bisa menyambung file lama). Tanpa flag ini,
+             # DirectoryWatcher default hanya memuat satu event file per run,
+             # sehingga epoch dari file kedua (hasil resume) TIDAK muncul di
+             # dasbor. `--reload_multifile=true` memaksa semua event file dalam
+             # satu folder dibaca -> epoch lanjutan ikut tampil.
+             "--reload_multifile=true"],
             stdout=_log_handle, stderr=subprocess.STDOUT,
             **_flags_detached(),
         )
