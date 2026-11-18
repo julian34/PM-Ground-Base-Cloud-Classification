@@ -13,7 +13,9 @@ dijalankan di mesin lokal (dibangun untuk GPU NVIDIA / CUDA 12.4, dengan fallbac
 Modifikasi arsitektur vs DenseNet-121 standar: **SEBlock** (squeeze-and-excitation),
 **SCConv** (konvolusi cosine ternormalisasi, dipaksa fp32 agar stabil di AMP),
 **SpatialAttnBR** (atensi spasial + channel λ rasio Biru/Merah, sadar-fisika),
-Top Block ringkas, **Focal Loss** (γ=2.0), dan fine-tuning ImageNet bertahap.
+Top Block (`TOP_HIDDEN=(512,128,32,16)`, dropout 0.8), **cabang CloudViT** paralel
+(default `USE_VIT=True`, `VIT_ARCH="cloudvit"`, fusi 256-dim ke Top Block),
+**Focal Loss** (γ=2.0), dan fine-tuning ImageNet bertahap (7 fase di `PHASES`).
 
 ## Stack
 
@@ -40,6 +42,8 @@ Top Block ringkas, **Focal Loss** (γ=2.0), dan fine-tuning ImageNet bertahap.
 │   ├── losses.py             # FocalLoss + init (LeCun uniform)
 │   ├── pretrained.py         # muat bobot ImageNet + nol-kan channel ND
 │   ├── finetune.py           # pembekuan/unfreeze bertahap
+│   ├── vit_branch.py         # ViTBranch sederhana (VIT_ARCH="simple")
+│   ├── cloudvit_branch.py    # CloudViTBranch (default, VIT_ARCH="cloudvit")
 │   ├── data.py               # transform, ImageFolder DataLoader, siapkan_batch
 │   ├── engine.py             # loop train/eval, jadwal tahap, pengaman NaN
 │   └── viz.py                # kurva training & confusion matrix

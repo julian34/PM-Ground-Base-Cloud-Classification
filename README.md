@@ -12,9 +12,10 @@ lokal (GPU NVIDIA terdeteksi: dibangun untuk CUDA 12.4).
 | **SEBlock** (Squeeze-and-Excitation) | Atensi antar-channel di tiap bottleneck & tiap block; diinisialisasi ≈ identitas. |
 | **SCConv** | Konvolusi *cosine* ter-normalisasi dengan skala τ per-channel (dipaksa fp32, stabil di bawah AMP). |
 | **SpatialAttnBR** | Atensi spasial + 1 channel **λ rasio Biru/Merah** → sadar-fisika (membedakan langit vs awan). |
-| **Top Block** | GAP → FC(1024→32) → BN → Dropout → FC(32→7). |
+| **Top Block** | GAP → FC(1024→512→128→32→16) + BN/ReLU tiap lapis → Dropout(0.8) → FC(16→7). |
+| **Cabang CloudViT** | Cabang Transformer paralel (default aktif: `USE_VIT=True`, `VIT_ARCH="cloudvit"`); vektornya (256-dim) difusikan ke Top Block. Lihat [`docs/CABANG_VIT_DETAIL.md`](docs/CABANG_VIT_DETAIL.md). |
 | **Focal Loss** | Menangani ketidakseimbangan kelas (γ = 2.0). |
-| **Fine-tuning 5 tahap** | Bobot ImageNet dibekukan lalu dibuka bertahap (lihat `PHASES`). |
+| **Fine-tuning bertahap** | Bobot ImageNet dibekukan lalu dibuka bertahap lewat 7 fase (lihat `PHASES`). |
 
 ## Struktur folder
 
@@ -36,6 +37,8 @@ lokal (GPU NVIDIA terdeteksi: dibangun untuk CUDA 12.4).
 │   ├── losses.py             # FocalLoss + init LeCun
 │   ├── pretrained.py         # muat bobot ImageNet + nol-kan channel ND
 │   ├── finetune.py           # pembekuan bertahap (5 tahap)
+│   ├── vit_branch.py         # ViTBranch sederhana (VIT_ARCH="simple")
+│   ├── cloudvit_branch.py    # CloudViTBranch (default, VIT_ARCH="cloudvit")
 │   ├── data.py               # transform, DataLoader, persiapan batch
 │   ├── engine.py             # loop train/eval, jadwal tahap, pengaman NaN
 │   ├── tblog.py              # TensorBoard: pasang & aktif otomatis saat training

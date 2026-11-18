@@ -6,13 +6,18 @@ dari **satu aliran (DenseNet murni)** menjadi **dua cabang paralel (DenseNet + V
 yang difusikan tepat sebelum Top Block.
 
 > **Sumber kebenaran tetap kode** di `src/clouddensenet/`:
-> `vit_branch.py` (arsitektur ViT), `model.py` (integrasi & fusi), `blocks.py`
-> (`TopBlock` dengan `extra_dim`), `config.py` (flag & hyperparameter), dan
-> `tests/test_forward.py` (smoke test). Hyperparameter default dibahas di §4.
+> `vit_branch.py` (ViTBranch sederhana), `cloudvit_branch.py` (CloudViTBranch),
+> `model.py` (integrasi & fusi), `blocks.py` (`TopBlock` dengan `extra_dim`),
+> `config.py` (flag & hyperparameter), dan `tests/test_forward.py` (smoke test).
+> Hyperparameter default dibahas di §4.
 >
-> **Catatan penting:** flag `USE_VIT = False` secara **default**. Artinya, tanpa
-> mengubah apa pun, arsitektur, `state_dict`, dan checkpoint lama **tidak berubah
-> sama sekali**. Cabang ViT bersifat *opt-in*.
+> ⚠️ **Konfigurasi saat ini (default).** `USE_VIT = True` dengan
+> `VIT_ARCH = "cloudvit"` — model **dua-cabang** aktif secara default, memakai backbone
+> **CloudViT** (`cloudvit_branch.py`, baca **citra mentah**, jalur independen dari
+> DenseNet, keluaran **256-dim**). Dokumen ini (§2–§6) menjelaskan varian **lama**
+> `VIT_ARCH = "simple"` (`vit_branch.ViTBranch`, fork setelah stem, keluaran `VIT_DIM`),
+> yang **masih tersedia** sebagai opsi. Untuk `vit_input`, default `config.VIT_INPUT`
+> adalah `"raw"` (bukan `"stem"`). Perbedaan terangkum di §4.
 
 ---
 
@@ -184,13 +189,18 @@ hard-code):
 
 | Flag | Default | Arti |
 |------|--------:|------|
-| `USE_VIT` | `False` | `True` = aktifkan cabang ViT paralel |
-| `VIT_DIM` | `192` | Dimensi embedding/token ViT. Kecil agar tak mudah overfit |
-| `VIT_DEPTH` | `4` | Jumlah lapis `TransformerEncoder` |
-| `VIT_HEADS` | `4` | Jumlah attention head (`VIT_DIM` **harus habis dibagi** angka ini: 192/4=48) |
-| `VIT_PATCH` | `8` | Ukuran patch pada peta stem 56×56 → grid 7×7 = **49 token** |
-| `VIT_MLP_RATIO` | `2.0` | Lebar hidden MLP di encoder = `VIT_DIM × rasio` (192×2=384) |
-| `VIT_DROP` | `0.1` | Dropout di dalam cabang ViT |
+| `USE_VIT` | `True` | `True` = aktifkan cabang ViT paralel |
+| `VIT_ARCH` | `"cloudvit"` | `"cloudvit"` = backbone CloudViT penuh (256-dim, baca citra mentah) \| `"simple"` = ViTBranch di §2–§6 |
+| `VIT_INPUT` | `"raw"` | Untuk `"simple"`: `"stem"` (peta 56×56) \| `"raw"` (citra mentah). CloudViT selalu `"raw"` |
+| `VIT_DIM` | `192` | (varian `"simple"`) Dimensi embedding/token ViT. Kecil agar tak mudah overfit |
+| `VIT_DEPTH` | `4` | (varian `"simple"`) Jumlah lapis `TransformerEncoder` |
+| `VIT_HEADS` | `4` | (varian `"simple"`) Jumlah attention head (`VIT_DIM` **harus habis dibagi**: 192/4=48) |
+| `VIT_PATCH` | `8` | (varian `"simple"`, `vit_input="stem"`) patch pada peta stem 56×56 → 7×7 = **49 token** |
+| `VIT_PATCH_RAW` | `16` | (varian `"simple"`, `vit_input="raw"`) patch pada citra 224×224 → 14×14 = **196 token** |
+| `VIT_MLP_RATIO` | `2.0` | (varian `"simple"`) Lebar hidden MLP di encoder = `VIT_DIM × rasio` (192×2=384) |
+| `VIT_DROP` | `0.1` | (varian `"simple"`) Dropout di dalam cabang ViT |
+| `CLOUDVIT_GDEPTH` | `1` | (varian `"cloudvit"`) jumlah blok transformer separable tiap G_Module |
+| `CLOUDVIT_DROP` | `0.1` | (varian `"cloudvit"`) dropout di dalam G_Module |
 
 > **Perubahan lain di commit yang sama:** `BATCH_SIZE` non-debug dinaikkan dari `8`
 > menjadi `32`. Ini berdiri sendiri (bukan bagian arsitektur ViT) tapi ikut masuk di
@@ -302,11 +312,12 @@ yang "hilang" begitu saja (diinisialisasi acak oleh konstruktor).
 
 Desain ini **aditif dan opt-in**:
 
-- **`USE_VIT = False` (default):** `self.vit = None`, `extra_dim = 0`. Model tidak
+- **`USE_VIT = False`:** `self.vit = None`, `extra_dim = 0`. Model tidak
   membangun modul ViT sama sekali; `state_dict` identik dengan versi pra-ViT.
   Checkpoint lama tetap **dimuat dan dijalankan tanpa perubahan**.
-- **`USE_VIT = True`:** muncul parameter baru berprefix `vit.*` **dan** `TopBlock`
-  memakai `Linear` pertama yang lebih lebar (`1024+192`). Artinya **bentuk `top.*`
+- **`USE_VIT = True` (default sekarang):** muncul parameter baru berprefix `vit.*`
+  **dan** `TopBlock` memakai `Linear` pertama yang lebih lebar (`1024+extra_dim`:
+  `1024+256` untuk `cloudvit`, `1024+192` untuk `simple`). Artinya **bentuk `top.*`
   berubah**, sehingga checkpoint ViT **tidak** bisa dimuat ke model non-ViT dan
   sebaliknya. Simpan/berinama checkpoint ViT secara terpisah.
 - Parameter konstruktor `use_vit` meng-override config per-instance:
@@ -317,9 +328,10 @@ Desain ini **aditif dan opt-in**:
 
 ## 9. Biaya parameter & cara mengaktifkan
 
-Menurut catatan commit, cabang ViT menambah **± 2,08 juta parameter**
-(dengan `VIT_DIM=192`, `VIT_DEPTH=4`). `pytest` tetap **6 passed** (termasuk test baru
-`test_forward_vit_branch` yang memverifikasi output tetap `(N, 7)`).
+Default sekarang (`VIT_ARCH="cloudvit"`) menambah **± 1,37 juta parameter**
+(`vit` 1.237.528; total 8.519.809 → 9.888.409). Varian lama `VIT_ARCH="simple"`
+(`VIT_DIM=192`, `VIT_DEPTH=4`) menambah ± 2,08 juta (total 10.603.009). `pytest` tetap
+**6 passed** (termasuk `test_forward_vit_branch` yang memverifikasi output tetap `(N, 7)`).
 
 **Mengaktifkan lewat config** (`src/clouddensenet/config.py`):
 

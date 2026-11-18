@@ -280,21 +280,23 @@ for sub in ["conv", "block1", "block2", "block3", "block4", "top", "vit"]:
         print(f"{sub:8s}: {sum(p.numel() for p in mod.parameters()):,}")
 ```
 
-Hasil (per 2026-11-13):
+Hasil (per 2026-11-19, default `VIT_ARCH="cloudvit"`):
 
-| Submodul        | Tanpa ViT | Dengan ViT |
-| --------------- | --------: | ---------: |
-| `conv` (stem)   |     9.408 |      9.408 |
-| `block1`        |   403.590 |    403.590 |
-| `block2`        | 1.056.780 |  1.056.780 |
-| `block3`        | 3.111.960 |  3.111.960 |
-| `block4`        | 2.340.880 |  2.340.880 |
-| `top`           |   596.615 |    694.919 |
-| `vit`           |         — |  1.984.896 |
-| **Total**       | **8.519.809** | **10.603.009** |
+| Submodul        | Tanpa ViT | Dengan ViT (cloudvit) |
+| --------------- | --------: | --------------------: |
+| `conv` (stem)   |     9.408 |                 9.408 |
+| `block1`        |   403.590 |               403.590 |
+| `block2`        | 1.056.780 |             1.056.780 |
+| `block3`        | 3.111.960 |             3.111.960 |
+| `block4`        | 2.340.880 |             2.340.880 |
+| `top`           |   596.615 |               727.687 |
+| `vit`           |         — |             1.237.528 |
+| **Total**       | **8.519.809** |         **9.888.409** |
 
 > `top` membesar saat ViT aktif karena Linear pertamanya melebar untuk menampung
-> vektor cabang ViT (fusi concat). Total bertambah ±2,08 jt (+25%).
+> vektor cabang CloudViT (fusi concat, `extra_dim=256`). Total bertambah ±1,37 jt (+16%).
+> Angka ini untuk `VIT_ARCH="cloudvit"` (default). Varian lama `VIT_ARCH="simple"`
+> (`VIT_DIM=192`) memberi angka berbeda (`top` 694.919, `vit` 1.984.896, total 10.603.009).
 
 ## 13. Troubleshooting
 

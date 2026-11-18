@@ -16,7 +16,10 @@ yang dimodifikasi untuk klasifikasi 7 kelas awan). Tujuannya tiga:
 > (`model.py`, `blocks.py`, `attention.py`, `conv.py`, `spectral.py`, `losses.py`,
 > `pretrained.py`, `finetune.py`, `config.py`). Hyperparameter yang dipakai:
 > `growth_rate=32`, `ND_CH=8`, `USE_SE=True`, `USE_SCCONV=True`, `USE_BR=True`,
-> `NUM_CLASSES=7`, `IMG_SIZE=224`.
+> `NUM_CLASSES=7`, `IMG_SIZE=224`, `TOP_HIDDEN=(512,128,32,16)`, `P_DROP_TOP=0.8`.
+> Secara default `USE_VIT=True` (`VIT_ARCH="cloudvit"`) menambah cabang global paralel;
+> dokumen ini menelusuri **cabang DenseNet** (cabang CloudViT ada di
+> [`CABANG_VIT_DETAIL.md`](CABANG_VIT_DETAIL.md)).
 
 ---
 
@@ -120,7 +123,7 @@ Jadi stem: `224×224 → 56×56`, channel `3 → 64`. ✅
 | `trans3` | BN-ReLU-Conv1×1 → AvgPool2 | 512 | 7×7 |
 | `block4` | 16 DenseLayer → SE4 → SpatialAttnBR | 1024 | 7×7 |
 | `norm5` | BN → ReLU | 1024 | 7×7 |
-| `top` | GAP → FC1024→32 → BN → ReLU → Dropout → FC32→7 | 7 | 1×1 |
+| `top` | GAP → FC(1024→512→128→32→16) + BN/ReLU → Dropout(0.8) → FC16→7 | 7 | 1×1 |
 
 **Bukti pertumbuhan channel tiap block** (tiap DenseLayer menambah tepat `growth_rate=32`):
 
@@ -233,14 +236,20 @@ Di `TopBlock`:
 ```
 GAP: [B,1024,7,7] → [B,1024,1,1]   (rata-rata tiap peta 7×7 jadi 1 angka)
 Flatten → [B,1024]
-Linear(1024→32) → BN → ReLU → Dropout(0.5)
-Linear(32→7) → logits [B,7]
+Linear(1024→512) → BN → ReLU
+Linear(512→128)  → BN → ReLU
+Linear(128→32)   → BN → ReLU
+Linear(32→16)    → BN → ReLU
+Dropout(0.8)
+Linear(16→7) → logits [B,7]
 ```
 
 - **GAP (Global Average Pooling)** mengubah tiap peta fitur 7×7 menjadi **satu angka**
   "seberapa kuat fitur ini muncul di seluruh gambar": $z_c = \frac{1}{49}\sum_{i,j} a_{c,i,j}$.
-- **Bottleneck 32** sengaja sempit → memaksa model meringkas, berperan sebagai
-  **regularisasi** (mengurangi overfit).
+- **Lebar lapisan** dari `config.TOP_HIDDEN = (512, 128, 32, 16)`, dropout `P_DROP_TOP = 0.8`.
+- **Bottleneck yang menyempit bertahap** (512→128→32→16) memaksa model meringkas, berperan
+  sebagai **regularisasi** (mengurangi overfit). Bila cabang CloudViT aktif, `Linear`
+  pertama melebar jadi `1024+256 → 512`.
 - Keluaran adalah **logit mentah** (belum softmax). Softmax baru dihitung di dalam loss.
 
 Logit ke-7 kelas: `1_cumulus, 2_altocumulus, 3_cirrus, 4_clearsky, 5_stratocumulus,
@@ -546,7 +555,7 @@ susunan block `[6,12,24,16]` identik, bobot bisa dipetakan langsung (ada penyesu
 filter 32→24 dipotong karena 8 channel dialihkan ke jalur ND).
 
 Jika semua layer langsung dilatih dengan LR besar, bobot ImageNet yang bagus bisa rusak
-("catastrophic forgetting"). Maka dipakai **6 fase** (`config.PHASES`, dieksekusi
+("catastrophic forgetting"). Maka dipakai **7 fase** (`config.PHASES`, dieksekusi
 `finetune.py`):
 
 | Fase (≤epoch) | LR | Status | Yang dilatih |
@@ -555,6 +564,7 @@ Jika semua layer langsung dilatih dengan LR besar, bobot ImageNet yang bagus bis
 | 20 | 1e-4 | `frozen` | idem |
 | 30 | 1e-5 | `partial` | + Block3-4, trans3, norm5 |
 | 40 | 5e-5 | `partial` | idem |
+| 45 | 1e-5 | `partial` | idem (LR diturunkan ke 1e-5) |
 | 60 | 1e-5 | `full` | seluruh backbone |
 | 80 | 1e-6 | `full` | full defrost end-to-end |
 

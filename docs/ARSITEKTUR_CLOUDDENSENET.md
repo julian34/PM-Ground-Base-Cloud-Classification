@@ -7,7 +7,13 @@ setiap komponen, alur forward, dimensi tensor, dan modifikasi terhadap DenseNet-
 > Sumber kebenaran: `src/clouddensenet/{model,blocks,attention,conv,spectral,losses,
 > pretrained,finetune}.py` dan `src/clouddensenet/config.py`.
 > Hyperparameter default yang dipakai dokumen ini: `growth_rate=32`, `ND_CH=8`,
-> `USE_SE=True`, `USE_SCCONV=True`, `USE_BR=True`, `NUM_CLASSES=7`.
+> `USE_SE=True`, `USE_SCCONV=True`, `USE_BR=True`, `NUM_CLASSES=7`,
+> `TOP_HIDDEN=(512,128,32,16)`.
+>
+> **Catatan cabang ViT.** Secara default `USE_VIT=True` dengan `VIT_ARCH="cloudvit"`,
+> sehingga model sebenarnya **dua-cabang** (DenseNet + CloudViT). Dokumen ini fokus pada
+> **cabang DenseNet**; cabang CloudViT dibahas terpisah di
+> [`CABANG_VIT_DETAIL.md`](CABANG_VIT_DETAIL.md).
 
 ---
 
@@ -22,9 +28,10 @@ yang diperkaya dengan beberapa modifikasi:
 | **SCConv** | `conv.SCConv` | Konvolusi ter-normalisasi cosine, dipaksa fp32 agar stabil di AMP, menggantikan conv 3×3 di DenseLayer. |
 | **SpatialAttnBR** | `attention.SpatialAttnBR` | Atensi spasial + 1 channel λ rasio Biru/Merah (sadar-fisika). |
 | **Channel ND** | jalur `pq` di `DenseLayer` | `ND_CH=8` channel ekstra per layer dari rasio ter-normalisasi `(P−Q)/(P+Q)`. |
-| **Top Block ringkas** | `blocks.TopBlock` | GAP → FC(1024→32) → BN → ReLU → Dropout → FC(32→7). |
+| **Top Block** | `blocks.TopBlock` | GAP → FC(1024→512→128→32→16) + BN/ReLU tiap lapis → Dropout(0.8) → FC(16→7). |
+| **Cabang CloudViT** | `cloudvit_branch.CloudViTBranch` | Cabang Transformer paralel (default `USE_VIT=True`), keluaran 256-dim difusikan ke Top Block. Lihat [`CABANG_VIT_DETAIL.md`](CABANG_VIT_DETAIL.md). |
 | **Focal Loss** | `losses.FocalLoss` | γ=2.0, menangani ketidakseimbangan kelas. |
-| **Fine-tuning bertahap** | `finetune.py` | Transfer learning ImageNet 6 fase (beku → buka 3-4 → full). |
+| **Fine-tuning bertahap** | `finetune.py` | Transfer learning ImageNet 7 fase (beku → buka 3-4 → full). |
 
 ---
 
@@ -59,7 +66,7 @@ b4 [B, 1024, 7, 7]
  │  norm5 (BN) → ReLU
 out [B, 1024, 7, 7]
  │
- ▼  Top Block: GAP → Flatten → FC(1024→32) → BN → ReLU → Dropout → FC(32→7)
+ ▼  Top Block: GAP → Flatten → FC(1024→512→128→32→16) + BN/ReLU → Dropout(0.8) → FC(16→7)
 logits [B, 7]
 ```
 
@@ -174,10 +181,18 @@ Dihitung di `siapkan_batch` pada citra **[0,1] yang belum dinormalisasi**:
 ### 3.8 Top Block (kepala klasifikasi)
 
 ```
-GAP(1×1) → Flatten → Linear(1024→32) → BN1d(32) → ReLU → Dropout(0.5) → Linear(32→7)
+GAP(1×1) → Flatten
+  → [Linear(1024→512) → BN1d(512) → ReLU]
+  → [Linear(512→128)  → BN1d(128) → ReLU]
+  → [Linear(128→32)   → BN1d(32)  → ReLU]
+  → [Linear(32→16)    → BN1d(16)  → ReLU]
+  → Dropout(0.8) → Linear(16→7)
 ```
-Menghasilkan **logit** mentah `[B, 7]` (softmax dilakukan di loss). Bottleneck 32 yang
-sempit berperan sebagai regularisasi.
+Lebar lapisan tersembunyi diambil dari `config.TOP_HIDDEN = (512, 128, 32, 16)` dan
+dropout dari `P_DROP_TOP = 0.8`. Menghasilkan **logit** mentah `[B, 7]` (softmax
+dilakukan di loss). Bottleneck yang menyempit bertahap (512→128→32→16) berperan sebagai
+regularisasi. Bila cabang CloudViT aktif (`extra_dim=256`), `Linear` pertama melebar
+menjadi `1024+256 → 512`.
 
 ---
 
@@ -193,7 +208,7 @@ sempit berperan sebagai regularisasi.
 ## 5. Transfer learning & fine-tuning bertahap
 
 Backbone di-inisialisasi dari **DenseNet-121 ImageNet** (`muat_imagenet`), lalu dilatih
-lewat jadwal 6 fase (`config.PHASES`) dengan strategi pembekuan di `finetune.py`:
+lewat jadwal 7 fase (`config.PHASES`) dengan strategi pembekuan di `finetune.py`:
 
 | Fase (epoch) | LR | Status | Yang dilatih |
 |-------------:|----|--------|--------------|
@@ -201,6 +216,7 @@ lewat jadwal 6 fase (`config.PHASES`) dengan strategi pembekuan di `finetune.py`
 | ≤20 | 1e-4 | `frozen` | idem (tahap 2) |
 | ≤30 | 1e-5 | `partial` (`buka_blok_3_4`) | + Block3-4, trans3, norm5 |
 | ≤40 | 5e-5 | `partial` | idem (unfreeze Dense Block 3-4) |
+| ≤45 | 1e-5 | `partial` | idem (lanjut, LR diturunkan ke 1e-5) |
 | ≤60 | 1e-5 | `full` (`buka_semua`) | seluruh backbone |
 | ≤80 | 1e-6 | `full` | full defrost end-to-end |
 
@@ -222,9 +238,10 @@ Optimasi: **AdamW** (`WEIGHT_DECAY=1e-2`), **grad clip** norma 5.0.
 | Atensi channel | — | **SEBlock** (bottleneck + akhir block) |
 | Atensi spasial | — | **SpatialAttnBR** (+λ B/R sadar-fisika) |
 | Channel ekstra | — | **ND** `(P−Q)/(P+Q)`, 8/layer |
-| Kepala | FC(1024→1000) | **Top Block** ringkas (1024→32→7) |
+| Kepala | FC(1024→1000) | **Top Block** (1024→512→128→32→16→7, dropout 0.8) |
+| Cabang global | — | **CloudViT** paralel (default `USE_VIT=True`), fusi 256-dim |
 | Loss | CrossEntropy | **Focal Loss** (γ=2.0) |
-| Training | — | **fine-tuning ImageNet 6 fase** |
+| Training | — | **fine-tuning ImageNet 7 fase** |
 
 Konfigurasi kedalaman block (6/12/24/16), stem, dan transisi **tetap sama** dengan
 DenseNet-121, sehingga bobot ImageNet bisa dipindahkan langsung.

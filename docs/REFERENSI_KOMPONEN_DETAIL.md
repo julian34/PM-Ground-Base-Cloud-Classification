@@ -352,7 +352,7 @@ mencegah *catastrophic forgetting*.
 - `nolkan_input_nd` menol-kan bobot yang **membaca** channel ND di awal → perilaku awal =
   **ImageNet murni**, lalu kontribusi ND tumbuh saat dilatih.
 - `finetune.py` (`bekukan_imagenet` → `buka_blok_3_4` → `buka_semua`) menjalankan jadwal
-  6 fase. (Tabel fase lengkap di
+  7 fase. (Tabel fase lengkap di
   [`PENJELASAN_MODEL_DETAIL.md` §6](PENJELASAN_MODEL_DETAIL.md#6-mengapa-training-nya-bertahap).)
 
 ---
