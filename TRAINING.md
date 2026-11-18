@@ -203,12 +203,16 @@ python scripts/evaluate.py
 
 # checkpoint tertentu (mis. salah satu di folder list/)
 python scripts/evaluate.py --checkpoint "artifacts/checkpoints/list/cloud_Versi01_51_09246.pth" --run-name cloud_51
+
+# dataset B (split ulang terpisah) — --dataset-b mengarahkan --data-root ke data/processed/dataset_b
+python scripts/evaluate.py --dataset-b --checkpoint "artifacts/checkpoints/dataset-repartitioned_Versi01.pth" --run-name datasetB
 ```
 
 | Argumen            | Default                                   | Keterangan                                                                                        |
 | ------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `--checkpoint`     | `artifacts/checkpoints/cloud_Versi01.pth` | Path file `.pth` yang dievaluasi.                                                                 |
-| `--data-root`      | `data/processed`                          | Root dataset ImageFolder (dipakai folder `test/`).                                                |
+| `--data-root`      | `data/processed`                          | Root dataset ImageFolder (dipakai folder `test/`). Eksplisit mengalahkan `--dataset-b`.           |
+| `--dataset-b`      | nonaktif                                  | Arahkan `--data-root` ke `data/processed/dataset_b` (`config.DATASET_B_ROOT`) bila `--data-root` tak diisi. |
 | `--run-name`       | `cloud`                                   | Prefiks nama berkas keluaran PNG.                                                                 |
 | `--test-per-class` | `None`                                    | Selain test penuh, evaluasi juga subset stratified N citra/kelas (mis. `300`) sebagai pembanding. |
 | `--show`           | nonaktif                                  | Tampilkan jendela plot; default hanya menyimpan PNG (`Agg`).                                      |

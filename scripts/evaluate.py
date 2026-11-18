@@ -10,6 +10,10 @@ Contoh:
     python scripts/evaluate.py --checkpoint "artifacts/checkpoints/06-11-2026/cloud_Versi01.pth"
     python scripts/evaluate.py --checkpoint "artifacts/checkpoints/06-11-2026/cloud_Versi01.pth" --test-per-class 300
 
+Dataset B (penelitian dataset berbeda, split ulang terpisah) — pakai --dataset-b
+agar --data-root otomatis diarahkan ke config.DATASET_B_ROOT (data/processed/dataset_b):
+    python scripts/evaluate.py --dataset-b --checkpoint "artifacts/checkpoints/dataset-repartitioned_Versi01.pth" --run-name datasetB
+
 Hasil PNG -> artifacts/results/<run>_cm_test.png (+ _cm_test<N>.png bila subset).
 """
 from __future__ import annotations
@@ -32,7 +36,13 @@ from clouddensenet.viz import plot_confusion_matrix  # noqa: E402
 
 def parse_args():
     p = argparse.ArgumentParser(description="Evaluasi CloudDenseNet dari checkpoint")
-    p.add_argument("--data-root", type=Path, default=C.DATA_ROOT)
+    p.add_argument("--data-root", type=Path, default=None,
+                   help=f"Root dataset ImageFolder (dipakai folder test/). "
+                        f"Default: {C.DATA_ROOT}")
+    p.add_argument("--dataset-b", action="store_true",
+                   help="Evaluasi pada dataset B (config.DATASET_B_ROOT = "
+                        "data/processed/dataset_b). Mengganti --data-root bila "
+                        "--data-root tidak diisi secara eksplisit.")
     p.add_argument("--checkpoint", type=Path,
                    default=C.CKPT_DIR / f"{C.RUN_NAME}{C.VERSION}.pth")
     p.add_argument("--run-name", default=C.RUN_NAME)
@@ -49,6 +59,14 @@ def main():
     if not args.show:
         matplotlib.use("Agg")
     set_seed(C.SEED)
+
+    # Resolusi data-root: --data-root eksplisit menang; jika tidak, --dataset-b
+    # mengarah ke config.DATASET_B_ROOT, selain itu default C.DATA_ROOT.
+    if args.data_root is None:
+        args.data_root = C.DATASET_B_ROOT if args.dataset_b else C.DATA_ROOT
+    elif args.dataset_b:
+        print("[eval] --data-root eksplisit diberikan; --dataset-b diabaikan.")
+    print(f"Dataset: {args.data_root}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device} | SEED: {C.SEED}")

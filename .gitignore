@@ -24,6 +24,11 @@ artifacts/onnx/
 Backup/
 laporan/
 
+# Skills terpasang lokal (mattpocock grill/*) — jangan di-commit/push
+.agents/
+.claude/skills/
+skills-lock.json
+
 # OS / editor
 .DS_Store
 Thumbs.db
