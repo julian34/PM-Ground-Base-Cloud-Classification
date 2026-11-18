@@ -99,6 +99,22 @@ python scripts/train.py --data-root data/processed --epochs 80 --run-name cloud
 Saat mulai, script mencetak device, daftar kelas, jadwal tahap (`PHASES`), dan
 jumlah parameter trainable per tahap.
 
+> **Dataset mana yang dipakai? (agar tidak tersesat)** Secara default training
+> memakai **`data/processed`** — dataset GCD utama (`train/` + `val/` + `test/`).
+> Berbeda dengan `evaluate.py`/`report.py`, `train.py` **tidak** punya flag
+> `--dataset-b`; untuk melatih pada **dataset B** (penelitian split ulang terpisah),
+> tunjuk root-nya secara eksplisit:
+>
+> ```bash
+> python scripts/train.py --data-root data/processed/dataset_b --run-name dataset_b
+> ```
+>
+> Pakai `--run-name` berbeda untuk dataset B supaya checkpoint & folder laporannya
+> tidak menimpa run `data/processed`. **Penting:** evaluasi/laporan harus memakai
+> dataset yang **sama** dengan saat checkpoint itu dilatih — misal checkpoint hasil
+> `data/processed` dilaporkan dengan `report.py` default (`data/processed`), dan
+> checkpoint hasil dataset B dengan `report.py --dataset-b` (lihat §8.2 & §9).
+
 ## 7. Pemantauan dengan TensorBoard (otomatis)
 
 TensorBoard **aktif sendiri** begitu training berjalan — tak perlu langkah manual.
@@ -182,13 +198,82 @@ python scripts/train.py --run-name "cloud_$(Get-Date -Format yyyyMMdd_HHmm)"
 
 ## 8. Keluaran training
 
-| Berkas                                    | Lokasi                                         |
-| ----------------------------------------- | ---------------------------------------------- |
-| Checkpoint **terbaik** (F1 val tertinggi) | `artifacts/checkpoints/<run>_Versi01.pth`      |
-| Checkpoint **terakhir** (untuk resume)    | `artifacts/checkpoints/<run>_Versi01_last.pth` |
-| Kurva training (PNG)                      | `artifacts/results/<run>_kurva.png`            |
-| Confusion matrix val (PNG)                | `artifacts/results/<run>_cm_val.png`           |
-| Log TensorBoard                           | `artifacts/runs/<run>/`                        |
+Semua keluaran satu kali pelatihan ditulis ke **satu folder** per pelatihan:
+`artifacts/results/<run>_<DD-MM-YYYY_HHMM>/` (dibuat otomatis saat training mulai).
+Checkpoint tetap di `artifacts/checkpoints/`. Saat **resume**, folder yang sama
+dilanjutkan — nama folder & waktu mulai disimpan di `_last.pth`, jadi log, kurva,
+confusion matrix, Grad-CAM, dan laporan tetap menyatu di satu tempat.
+
+| Berkas                                                | Lokasi                                                           |
+| ----------------------------------------------------- | --------------------------------------------------------------- |
+| Checkpoint **terbaik** (F1 val tertinggi)             | `artifacts/checkpoints/<run>_Versi01.pth`                       |
+| Checkpoint **terakhir** (untuk resume)                | `artifacts/checkpoints/<run>_Versi01_last.pth`                  |
+| **Laporan metrik (Markdown)**                         | `artifacts/results/<run>_<tanggal>/<run>_metrik.md`             |
+| Metrik per-kelas val & test (CSV)                     | `.../<run>_metrik_val.csv`, `.../<run>_metrik_test.csv`         |
+| Confusion matrix val & test (PNG)                     | `.../<run>_cm_val.png`, `.../<run>_cm_test.png`                 |
+| Kurva **Loss** & **Akurasi** (PNG, 2 kanvas terpisah) | `.../<run>_kurva_loss.png`, `.../<run>_kurva_akurasi.png`       |
+| Grad-CAM prediksi benar & salah (PNG)                 | `.../<run>_gradcam_test_benar.png`, `.../<run>_gradcam_test_salah.png` |
+| Log per-epoch (CSV)                                   | `.../<run>_log.csv`                                             |
+| Log TensorBoard                                       | `artifacts/runs/<run>/`                                         |
+
+### 8.1. Laporan metrik otomatis (pasca-training)
+
+Begitu training selesai, `train.py` otomatis memuat **checkpoint terbaik** lalu
+menulis laporan lengkap `<run>_metrik.md` berisi:
+
+- **Konfigurasi parameter utama** yang dipakai (ringkasan `config.py` + jadwal `PHASES`).
+- **Metrik klasifikasi** per kelas (precision/recall/F1/support) + accuracy, macro &
+  weighted avg untuk **validasi** dan **test**, beserta confusion matrix tiap split
+  (dengan tautan gambar).
+- **Grafik Loss** (train vs val) dan **Grafik Akurasi** (train vs val) pada **dua
+  kanvas terpisah**.
+- **Grad-CAM** sampel prediksi **benar** dan **salah**, lengkap skor **kepercayaan
+  (confidence)** model.
+- **Catatan**: waktu mulai & selesai, durasi, keterangan **resume** (bila training
+  dilanjutkan dari checkpoint), dan **spesifikasi hardware** (CPU, RAM, GPU/VRAM,
+  CUDA, Python, PyTorch) — terdeteksi otomatis.
+
+Tidak perlu langkah tambahan — laporan muncul sendiri di folder run di atas.
+Argumen `--test-per-class N` (opsional) menambah confusion matrix subset stratified
+N citra/kelas sebagai pembanding.
+
+### 8.2. Membuat ulang laporan dari checkpoint — `scripts/report.py`
+
+Untuk mencetak laporan yang **sama** dari checkpoint yang sudah ada (tanpa melatih
+ulang), pakai `scripts/report.py`:
+
+```bash
+# checkpoint terbaik default (artifacts/checkpoints/cloud_Versi01.pth)
+python scripts/report.py
+
+# checkpoint & nama run tertentu
+python scripts/report.py --checkpoint "artifacts/checkpoints/06-11-2026/cloud_Versi01.pth" --run-name cloud
+
+# dataset B (split ulang terpisah)
+python scripts/report.py --dataset-b --checkpoint "artifacts/checkpoints/dataset-repartitioned_Versi01.pth" --run-name datasetB
+```
+
+| Argumen                | Default                                     | Keterangan                                                                      |
+| ---------------------- | ------------------------------------------- | ------------------------------------------------------------------------------- |
+| `--checkpoint`         | `artifacts/checkpoints/cloud_Versi01.pth`   | Checkpoint `.pth` sumber bobot.                                                  |
+| `--data-root`          | `data/processed`                            | Root dataset ImageFolder (`val/` & `test/`). Eksplisit mengalahkan `--dataset-b`. |
+| `--dataset-b`          | nonaktif                                    | Arahkan `--data-root` ke `data/processed/dataset_b` bila `--data-root` tak diisi. |
+| `--run-name`           | `cloud`                                     | Prefiks nama berkas keluaran.                                                    |
+| `--out-dir`            | `artifacts/results/<run>_laporan_<tanggal>` | Folder keluaran laporan.                                                         |
+| `--history-checkpoint` | sibling `..._last.pth`                      | Sumber `history` untuk kurva loss/akurasi.                                       |
+| `--log-csv`            | auto                                        | CSV log per-epoch (fallback kurva & waktu bila `history` tak ada).              |
+| `--n-gradcam`          | `4`                                         | Jumlah sampel Grad-CAM per kategori (benar & salah).                             |
+| `--no-val`             | nonaktif                                    | Lewati evaluasi validasi (hanya test).                                          |
+| `--show`               | nonaktif                                    | Tampilkan jendela plot; default hanya simpan PNG (`Agg`).                        |
+
+> Kurva loss/akurasi butuh riwayat training. Diambil dari `..._last.pth` (berisi
+> `history`) atau dari CSV log per-epoch; bila keduanya tak ada, kurva dilewati
+> (bagian laporan lain tetap dibuat). Waktu & info resume diambil dari log
+> pelatihan asli bila tersedia — bila tidak, baris terkait ditandai `—`.
+>
+> `scripts/report.py` adalah versi **lengkap** dari `scripts/evaluate.py` (§9):
+> selain confusion matrix test, ia juga menghasilkan metrik per-kelas, CM validasi,
+> kurva, Grad-CAM, dan Markdown dalam satu folder.
 
 ## 9. Evaluasi dari checkpoint (tanpa training ulang)
 
