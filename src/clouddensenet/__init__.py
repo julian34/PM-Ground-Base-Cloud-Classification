@@ -25,6 +25,11 @@ from .finetune import bekukan_imagenet, buka_blok_3_4, buka_semua, set_bn_beku_e
 from .losses import FocalLoss, init_new_layers, lecun_uniform_
 from .model import CloudDenseNet
 from .pretrained import muat_imagenet, nolkan_input_nd
+from .report import (
+    buat_laporan_lengkap, gradcam_benar_salah, hitung_metrik,
+    kumpulkan_info_hardware, plot_kurva_akurasi, plot_kurva_loss,
+    ringkas_durasi, simpan_metrik_csv,
+)
 from .spectral import br_ratio_lambda, lambda_relatif, valid_mask
 from .vit_branch import ViTBranch
 from .tblog import catat_epoch, hentikan_server, siapkan_tensorboard, tutup_tensorboard
@@ -43,6 +48,9 @@ __all__ = [
     "train_one_epoch", "evaluate", "phase_of", "apply_phase",
     "EpochLogger",
     "GradCAM", "overlay_cam", "plot_gradcam",
+    "buat_laporan_lengkap", "gradcam_benar_salah", "hitung_metrik",
+    "kumpulkan_info_hardware", "plot_kurva_akurasi", "plot_kurva_loss",
+    "ringkas_durasi", "simpan_metrik_csv",
     "br_ratio_lambda", "lambda_relatif", "valid_mask",
     "siapkan_tensorboard", "catat_epoch", "tutup_tensorboard", "hentikan_server",
 ]

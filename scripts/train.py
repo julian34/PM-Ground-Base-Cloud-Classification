@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -21,12 +22,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from clouddensenet import config as C  # noqa: E402
 from clouddensenet import (  # noqa: E402
-    CloudDenseNet, EpochLogger, FocalLoss, apply_phase, build_loaders, build_test_loader,
-    catat_epoch, evaluate, muat_imagenet, nolkan_input_nd, phase_of, set_seed,
-    siapkan_tensorboard, train_one_epoch, tutup_tensorboard,
+    CloudDenseNet, EpochLogger, FocalLoss, apply_phase, buat_laporan_lengkap,
+    build_loaders, build_test_loader, catat_epoch, evaluate, muat_imagenet,
+    nolkan_input_nd, phase_of, set_seed, siapkan_tensorboard, train_one_epoch,
+    tutup_tensorboard,
 )
 from clouddensenet.engine import is_finite  # noqa: E402
-from clouddensenet.viz import plot_confusion_matrix, plot_training_history  # noqa: E402
+from clouddensenet.viz import plot_confusion_matrix  # noqa: E402
 
 
 def parse_args():
@@ -58,6 +60,7 @@ def main():
             "Letakkan dataset GCD (train/val/test) di sana — lihat data/README.md."
         )
 
+    start_now = datetime.now()
     C.CKPT_DIR.mkdir(parents=True, exist_ok=True)
     C.RESULT_DIR.mkdir(parents=True, exist_ok=True)
     ckpt_path = C.CKPT_DIR / f"{args.run_name}{C.VERSION}.pth"
@@ -81,11 +84,9 @@ def main():
         auto_launch=C.TB_AUTO_LAUNCH, port=C.TB_PORT,
     )
 
-    # Log per-epoch ke satu file CSV (append; aman untuk resume).
-    epoch_logger = EpochLogger(C.RESULT_DIR / f"{args.run_name}_log.csv")
-
     history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": [], "val_f1": []}
-    best_f1, start_epoch, current_phase = -1.0, 1, 0
+    best_f1, best_epoch, start_epoch, current_phase = -1.0, None, 1, 0
+    laporan_meta = None
 
     if args.resume and last_path.exists():
         ck = torch.load(last_path, map_location=device, weights_only=False)
@@ -95,8 +96,31 @@ def main():
             scaler.load_state_dict(ck["scaler"])
         history = ck["history"]
         best_f1 = ck.get("best_f1", max(history["val_f1"], default=-1.0))
+        best_epoch = ck.get("best_epoch")
         start_epoch = ck["epoch"] + 1
+        laporan_meta = ck.get("laporan")
         print(f"Resume dari epoch {start_epoch} | best_f1 {best_f1:.4f}")
+
+    # SATU folder keluaran per pelatihan. Saat resume, lanjutkan folder yang sama
+    # (tersimpan di checkpoint) agar log, kurva, CM, Grad-CAM, & laporan menyatu.
+    resumed = start_epoch > 1
+    if laporan_meta and laporan_meta.get("run_dir"):
+        run_dir = Path(laporan_meta["run_dir"])
+        started_at = laporan_meta.get("started_at", start_now.isoformat())
+        sesi = list(laporan_meta.get("sesi", []))
+    else:
+        run_dir = C.RESULT_DIR / f"{args.run_name}_{start_now:%d-%m-%Y_%H%M}"
+        started_at = start_now.isoformat()
+        sesi = []
+    run_dir.mkdir(parents=True, exist_ok=True)
+    sesi.append({"mulai": start_now.isoformat(), "start_epoch": start_epoch, "resume": resumed})
+    print(f"Folder keluaran pelatihan: {run_dir}")
+
+    def _laporan_meta():
+        return {"run_dir": str(run_dir), "started_at": started_at, "sesi": sesi}
+
+    # Log per-epoch ke satu file CSV di folder run (append; aman untuk resume).
+    epoch_logger = EpochLogger(run_dir / f"{args.run_name}_log.csv")
 
     for epoch in range(start_epoch, args.epochs + 1):
         phase = phase_of(epoch)
@@ -128,46 +152,58 @@ def main():
               f"val loss {va_loss:.4f} acc {va_acc:.3f} f1 {va_f1:.3f} | {dt:.0f}s")
 
         if va_f1 > best_f1:
-            best_f1 = va_f1
-            torch.save({"epoch": epoch, "model": model.state_dict(), "best_f1": best_f1}, ckpt_path)
+            best_f1, best_epoch = va_f1, epoch
+            torch.save({"epoch": epoch, "model": model.state_dict(),
+                        "best_f1": best_f1, "best_epoch": best_epoch}, ckpt_path)
             print(f"Epoch {epoch:02d}: [OK] model terbaik disimpan (f1={best_f1:.4f})")
 
         torch.save({"epoch": epoch, "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(), "scaler": scaler.state_dict(),
-                    "history": history, "best_f1": best_f1}, last_path)
+                    "history": history, "best_f1": best_f1, "best_epoch": best_epoch,
+                    "laporan": _laporan_meta()}, last_path)
 
+    finished_now = datetime.now()
     if history["train_loss"]:
-        plot_training_history(history, simpan=str(C.RESULT_DIR / f"{args.run_name}_kurva.png"))
-
-        # Confusion matrix dibuat dari model TERBAIK (checkpoint f1 tertinggi),
-        # bukan state epoch terakhir, agar cocok dengan performa yang dilaporkan.
+        # Laporan dibuat dari model TERBAIK (checkpoint f1 tertinggi), bukan state
+        # epoch terakhir, agar angka cocok dengan performa yang dilaporkan.
         if ckpt_path.exists():
             best = torch.load(ckpt_path, map_location=device, weights_only=False)
             model.load_state_dict(best["model"])
-            print(f"[eval] muat model terbaik {ckpt_path.name} (f1={best.get('best_f1', float('nan')):.4f})")
+            best_f1 = best.get("best_f1", best_f1)
+            best_epoch = best.get("best_epoch", best_epoch)
+            print(f"[eval] muat model terbaik {ckpt_path.name} (f1={best_f1:.4f})")
 
-        # 1. Confusion matrix pada data VALIDASI
-        print("[eval] confusion matrix — validasi")
-        plot_confusion_matrix(model, val_loader, device, classes=classes,
-                              simpan=str(C.RESULT_DIR / f"{args.run_name}_cm_val.png"))
-
-        # 2. Confusion matrix pada data TEST penuh (held-out <data_root>/test, 9000 citra)
+        # Test penuh (held-out <data_root>/test, 9000 citra). None bila tak ada.
         test_loader, _ = build_test_loader(args.data_root, device)
-        if test_loader is not None:
-            print("[eval] confusion matrix — test penuh")
-            plot_confusion_matrix(model, test_loader, device, classes=classes,
-                                  simpan=str(C.RESULT_DIR / f"{args.run_name}_cm_test.png"))
 
-        # 3. (opsional) Confusion matrix pada subset test stratified N/kelas — pembanding.
-        #    Test penuh di atas tetap dijalankan; ini evaluasi TAMBAHAN, bukan pengganti.
-        if args.test_per_class is not None:
+        # Laporan lengkap (CSV + CM val/test + kurva loss & akurasi terpisah +
+        # Grad-CAM benar/salah + Markdown) ke SATU folder pelatihan `run_dir`.
+        meta = {
+            "checkpoint": str(ckpt_path.relative_to(C.PROJECT_DIR)),
+            "best_f1": best_f1,
+            "best_epoch": best_epoch,
+            "total_epoch": len(history["train_loss"]),
+            "started_at": started_at,
+            "finished_at": finished_now.isoformat(),
+            "resume": len(sesi) > 1 or resumed,
+            "sesi": sesi,
+            "log_csv": str(run_dir / f"{args.run_name}_log.csv"),
+        }
+        buat_laporan_lengkap(
+            model, device, classes, run_dir, args.run_name, meta,
+            val_loader=val_loader, test_loader=test_loader, history=history)
+
+        # (opsional) Confusion matrix subset test stratified N/kelas — pembanding.
+        if args.test_per_class is not None and test_loader is not None:
             sub_loader, _ = build_test_loader(args.data_root, device,
                                               per_class=args.test_per_class)
             if sub_loader is not None:
                 print(f"[eval] confusion matrix — test subset ({args.test_per_class}/kelas)")
                 plot_confusion_matrix(
                     model, sub_loader, device, classes=classes,
-                    simpan=str(C.RESULT_DIR / f"{args.run_name}_cm_test{args.test_per_class}.png"))
+                    simpan=str(run_dir / f"{args.run_name}_cm_test{args.test_per_class}.png"))
+    else:
+        print("[report] history kosong — laporan metrik dilewati.")
 
     tutup_tensorboard(writer)
 
