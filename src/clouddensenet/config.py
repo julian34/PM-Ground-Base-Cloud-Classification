@@ -21,7 +21,7 @@ SEED = 42               # seed untuk random, numpy, torch, dll Default: 42
 # Data
 # --------------------------------------------------------------------------- #
 NUM_CLASSES = 7
-IMG_SIZE = 512                       # default 224 x 224 piksel, RGB
+IMG_SIZE = 224                       # default 224 x 224 piksel, RGB
 MEAN = [0.485, 0.456, 0.406]         # normalisasi ImageNet
 STD = [0.229, 0.224, 0.225]
 EPS = 1e-6
