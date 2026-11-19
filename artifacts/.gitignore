@@ -1,0 +1,15 @@
+# Folder artifacts/: hanya KERANGKA folder yang boleh di-push ke GitHub.
+# Semua HASIL (checkpoint *.pth, gambar *.png, *.csv, laporan, dll) TIDAK di-commit.
+#
+# Pola di bawah: abaikan semua isi, tapi tetap simpan struktur folder
+# (lewat file .gitkeep) dan file .gitignore ini sendiri.
+
+# 1) Abaikan semua file & folder di dalam artifacts/
+*
+
+# 2) Tetap telusuri subfolder (agar .gitkeep di dalamnya bisa dilacak)
+!*/
+
+# 3) Kecualikan penanda struktur & aturan ini
+!.gitkeep
+!.gitignore

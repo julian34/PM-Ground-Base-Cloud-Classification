@@ -1,379 +1,91 @@
-# Penjelasan Detail Cabang ViT — Arsitektur Dua-Cabang CloudDenseNet
-
-Dokumen ini menjelaskan **cabang Vision Transformer (ViT)** yang ditambahkan ke
-CloudDenseNet pada branch `ViT-branch` (commit `bd03ce1`). Cabang ini mengubah model
-dari **satu aliran (DenseNet murni)** menjadi **dua cabang paralel (DenseNet + ViT)**
-yang difusikan tepat sebelum Top Block.
-
-> **Sumber kebenaran tetap kode** di `src/clouddensenet/`:
-> `vit_branch.py` (ViTBranch sederhana), `cloudvit_branch.py` (CloudViTBranch),
-> `model.py` (integrasi & fusi), `blocks.py` (`TopBlock` dengan `extra_dim`),
-> `config.py` (flag & hyperparameter), dan `tests/test_forward.py` (smoke test).
-> Hyperparameter default dibahas di §4.
->
-> ⚠️ **Konfigurasi saat ini (default).** `USE_VIT = True` dengan
-> `VIT_ARCH = "cloudvit"` — model **dua-cabang** aktif secara default, memakai backbone
-> **CloudViT** (`cloudvit_branch.py`, baca **citra mentah**, jalur independen dari
-> DenseNet, keluaran **256-dim**). Dokumen ini (§2–§6) menjelaskan varian **lama**
-> `VIT_ARCH = "simple"` (`vit_branch.ViTBranch`, fork setelah stem, keluaran `VIT_DIM`),
-> yang **masih tersedia** sebagai opsi. Untuk `vit_input`, default `config.VIT_INPUT`
-> adalah `"raw"` (bukan `"stem"`). Perbedaan terangkum di §4.
-
----
-
-## Daftar isi
-
-1. [Ide besar: mengapa dua cabang?](#1-ide-besar-mengapa-dua-cabang)
-2. [Di mana percabangan terjadi (titik fork)](#2-di-mana-percabangan-terjadi-titik-fork)
-3. [Anatomi `ViTBranch` langkah demi langkah](#3-anatomi-vitbranch-langkah-demi-langkah)
-4. [Hyperparameter cabang ViT (config.py)](#4-hyperparameter-cabang-vit-configpy)
-5. [Fusi di Top Block (`extra_dim`)](#5-fusi-di-top-block-extra_dim)
-6. [Aliran tensor & shape lengkap](#6-aliran-tensor--shape-lengkap)
-7. [Training: bagaimana cabang ViT dilatih](#7-training-bagaimana-cabang-vit-dilatih)
-8. [Kompatibilitas mundur & checkpoint](#8-kompatibilitas-mundur--checkpoint)
-9. [Biaya parameter & cara mengaktifkan](#9-biaya-parameter--cara-mengaktifkan)
-10. [Catatan teknis & kejujuran](#10-catatan-teknis--kejujuran)
-
----
-
-## 1. Ide besar: mengapa dua cabang?
-
-**CNN (DenseNet)** unggul menangkap pola **lokal** — tekstur, tepi, gradasi — lewat
-konvolusi berjendela kecil yang bertumpuk. Tapi untuk menangkap **relasi jarak-jauh**
-(misal: sebaran awan di seluruh bingkai, hubungan antar-wilayah langit yang
-berjauhan), CNN harus menumpuk banyak lapis dulu sampai receptive field-nya cukup luas.
-
-**Vision Transformer (ViT)** justru sebaliknya: lewat **self-attention**, setiap patch
-bisa "melihat" semua patch lain **sejak lapis pertama**, sehingga relasi global
-tertangkap langsung.
-
-Gagasannya: **jalankan keduanya paralel**, lalu gabungkan. DenseNet memberi vektor
-ringkasan kaya-fitur-lokal (1024-dim), ViT memberi vektor ringkasan kaya-konteks-global
-(`VIT_DIM`-dim). Keduanya **di-concat** sebelum MLP klasifikasi, sehingga Top Block
-memutuskan kelas berbekal **dua sudut pandang sekaligus**.
-
-```
-                         ┌─────────────── Cabang A: DenseNet ───────────────┐
-  citra ──► stem (conv)  │  block1..block4 + SE + SpatialAttnBR + norm5     │ ─► out (B,1024,7,7)
-            (B,64,56,56) │                                                   │
-                  │      └───────────────────────────────────────────────────┘
-                  │                                                              ╲
-                  │      ┌─────────────── Cabang B: ViT ───────────────┐          ╲ (GAP → 1024)
-                  └────► │  patch-embed + CLS + pos + TransformerEncoder │ ─► vec_vit (B,VIT_DIM)
-                         └───────────────────────────────────────────────┘          │
-                                                                                     ▼
-                                                      Top Block: concat([1024, VIT_DIM]) ─► MLP ─► 7 logit
-```
-
----
-
-## 2. Di mana percabangan terjadi (titik fork)
-
-Percabangan terjadi **setelah stem**, bukan dari citra mentah. "Stem" adalah
-konvolusi pertama DenseNet: `conv7x7 stride2 → BN → ReLU → maxpool stride2`.
-
-Di `model.py`:
-
-```python
-def forward(self, x, lam=None, return_all=False):
-    s = self.maxpool(self.relu(self.bn(self.conv(x))))   # (B, 64, 56, 56)  ← STEM
-
-    # --- Cabang A: backbone DenseNet (seperti semula) ---
-    b1 = self.sa(self.se1(self.block1(s)), lam)          # dst. ... → out (B,1024,7,7)
-    ...
-    out = F.relu(self.norm5(b4))
-
-    # --- Cabang B: ViT (opsional) dari peta stem yang sama ---
-    vec_vit = self.vit(s) if self.vit is not None else None   # (B, VIT_DIM) | None
-
-    # --- Fusi ---
-    logits = self.top(out, extra=vec_vit)                # (B, n_cls)
-```
-
-**Mengapa dari peta stem (B,64,56,56), bukan dari citra mentah (B,3,224,224)?**
-
-- **Hemat komputasi.** 56×56 jauh lebih kecil dari 224×224; jumlah token ViT jadi
-  kecil dan terkendali (lihat §3).
-- **Berbagi fitur awal.** Stem sudah mengekstrak fitur low-level (tepi, warna) yang
-  berguna bagi kedua cabang — tidak perlu dihitung dua kali.
-- **Input yang sama, dua pemroses berbeda.** Peta stem `s` menjadi titik fork
-  tunggal; DenseNet dan ViT sama-sama membacanya.
-
----
-
-## 3. Anatomi `ViTBranch` langkah demi langkah
-
-File: `src/clouddensenet/vit_branch.py`. Kelas `ViTBranch` mengubah peta stem
-`(B, 64, 56, 56)` menjadi **satu vektor ringkasan** `(B, VIT_DIM)`.
-
-### Langkah 1 — Patch embedding (memecah peta jadi token)
-
-```python
-self.patch_embed = nn.Conv2d(in_channels, dim, kernel_size=patch, stride=patch)
-```
-
-Satu konvolusi ber-stride `patch` membelah peta 56×56 menjadi grid tak-saling-tindih.
-Dengan `patch=8`:
-
-```
-grid        = 56 // 8 = 7
-num_patches = 7 × 7   = 49 token
-```
-
-Tiap sel grid 8×8 → satu vektor sepanjang `dim` (VIT_DIM). Hasilnya
-`(B, dim, 7, 7)`, lalu di-flatten jadi **deretan 49 token**:
-
-```python
-t = self.patch_embed(x)              # (B, dim, 7, 7)
-t = t.flatten(2).transpose(1, 2)     # (B, 49, dim)
-```
-
-### Langkah 2 — Token CLS (peringkas global)
-
-```python
-self.cls_token = nn.Parameter(torch.zeros(1, 1, dim))
-...
-cls = self.cls_token.expand(B, -1, -1)   # (B, 1, dim)
-t   = torch.cat([cls, t], dim=1)         # (B, 50, dim)
-```
-
-Satu token "CLS" yang **dapat dilatih** ditempel di depan. Setelah melewati encoder,
-token inilah yang dipakai sebagai ringkasan seluruh gambar (gaya BERT/ViT standar).
-Token total menjadi `1 + 49 = 50`.
-
-### Langkah 3 — Embedding posisi
-
-```python
-self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, dim))  # (1, 50, dim)
-...
-t = self.drop(t + self.pos_embed)
-```
-
-Self-attention bersifat *permutation-invariant* (tidak tahu urutan). Embedding posisi
-yang dapat dilatih **menyuntikkan informasi "token ini berasal dari petak mana"**.
-Ditambahkan (bukan di-concat) ke setiap token, lalu di-dropout.
-
-> Inisialisasi `cls_token` dan `pos_embed` memakai `trunc_normal_(std=0.02)` —
-> konvensi umum ViT agar training stabil.
-
-### Langkah 4 — Transformer Encoder (bawaan PyTorch)
-
-```python
-layer = nn.TransformerEncoderLayer(
-    d_model=dim, nhead=heads, dim_feedforward=int(dim*mlp_ratio),
-    dropout=drop, activation="gelu", batch_first=True)
-self.encoder = nn.TransformerEncoder(layer, num_layers=depth)
-```
-
-Dipakai `nn.TransformerEncoder` **standar PyTorch** (tanpa dependensi tambahan) agar
-ringkas dan mudah dibaca. Tiap lapis = **Multi-Head Self-Attention + MLP (GELU)** dengan
-residual & LayerNorm. `batch_first=True` → bentuk tensor `(B, token, dim)`.
-
-### Langkah 5 — Ambil token CLS
-
-```python
-t = self.encoder(t)     # (B, 50, dim)
-t = self.norm(t)        # LayerNorm akhir
-return t[:, 0]          # token CLS → (B, dim)
-```
-
-Setelah encoder + LayerNorm akhir, hanya **token ke-0 (CLS)** yang diambil. Itulah
-vektor ringkasan `(B, VIT_DIM)` yang dikirim ke fusi.
-
----
-
-## 4. Hyperparameter cabang ViT (config.py)
-
-Semua di `src/clouddensenet/config.py` (sumber kebenaran — ubah di sini, bukan
-hard-code):
-
-| Flag | Default | Arti |
-|------|--------:|------|
-| `USE_VIT` | `True` | `True` = aktifkan cabang ViT paralel |
-| `VIT_ARCH` | `"cloudvit"` | `"cloudvit"` = backbone CloudViT penuh (256-dim, baca citra mentah) \| `"simple"` = ViTBranch di §2–§6 |
-| `VIT_INPUT` | `"raw"` | Untuk `"simple"`: `"stem"` (peta 56×56) \| `"raw"` (citra mentah). CloudViT selalu `"raw"` |
-| `VIT_DIM` | `192` | (varian `"simple"`) Dimensi embedding/token ViT. Kecil agar tak mudah overfit |
-| `VIT_DEPTH` | `4` | (varian `"simple"`) Jumlah lapis `TransformerEncoder` |
-| `VIT_HEADS` | `4` | (varian `"simple"`) Jumlah attention head (`VIT_DIM` **harus habis dibagi**: 192/4=48) |
-| `VIT_PATCH` | `8` | (varian `"simple"`, `vit_input="stem"`) patch pada peta stem 56×56 → 7×7 = **49 token** |
-| `VIT_PATCH_RAW` | `16` | (varian `"simple"`, `vit_input="raw"`) patch pada citra 224×224 → 14×14 = **196 token** |
-| `VIT_MLP_RATIO` | `2.0` | (varian `"simple"`) Lebar hidden MLP di encoder = `VIT_DIM × rasio` (192×2=384) |
-| `VIT_DROP` | `0.1` | (varian `"simple"`) Dropout di dalam cabang ViT |
-| `CLOUDVIT_GDEPTH` | `1` | (varian `"cloudvit"`) jumlah blok transformer separable tiap G_Module |
-| `CLOUDVIT_DROP` | `0.1` | (varian `"cloudvit"`) dropout di dalam G_Module |
-
-> **Perubahan lain di commit yang sama:** `BATCH_SIZE` non-debug dinaikkan dari `8`
-> menjadi `32`. Ini berdiri sendiri (bukan bagian arsitektur ViT) tapi ikut masuk di
-> commit `bd03ce1` — perhatikan saat membandingkan run lama vs baru.
-
-**Hubungan ukuran yang wajib konsisten:**
-
-```
-stem_size   = IMG_SIZE // 4   = 224 // 4 = 56     (conv stride2 + maxpool stride2)
-grid        = stem_size // VIT_PATCH = 56 // 8 = 7
-num_patches = grid × grid = 49
-token total = num_patches + 1 (CLS) = 50
-```
-
-Jika `IMG_SIZE` atau `VIT_PATCH` diubah, `num_patches` ikut berubah dan `pos_embed`
-menyesuaikan otomatis (dihitung di `__init__`).
-
----
-
-## 5. Fusi di Top Block (`extra_dim`)
-
-File: `src/clouddensenet/blocks.py`, kelas `TopBlock`. Fusi dilakukan dengan
-**concatenation** — menggabung dua vektor menjadi satu yang lebih lebar.
-
-```python
-def __init__(self, in_channels=1024, ..., extra_dim=0):
-    ...
-    self.extra_dim = extra_dim
-    lapisan, d_in = [], in_channels + extra_dim   # +extra_dim untuk fusi concat
-    ...
-
-def forward(self, x, extra=None):
-    x = self.global_pool(x)      # (B,1024,1,1)  Global Average Pooling
-    x = self.flatten(x)          # (B,1024)
-    if extra is not None:        # fusi: gabung vektor DenseNet + vektor cabang
-        x = torch.cat([x, extra], dim=1)   # (B, 1024 + extra_dim)
-    x = self.bottleneck(x)       # MLP
-    return self.fc(x)            # (B, n_cls) logits
-```
-
-Poin kunci:
-
-- **`extra_dim`** memperlebar `Linear` pertama agar muat vektor gabungan. Saat ViT
-  aktif, `extra_dim = VIT_DIM = 192`, jadi input MLP = `1024 + 192 = 1216`.
-- **`extra=None`** (ViT nonaktif) → cabang `if` dilewati → `TopBlock` berperilaku
-  **persis seperti versi lama** (input MLP tetap 1024). Inilah yang menjaga
-  kompatibilitas mundur.
-- DenseNet di-**Global Average Pool** dulu `(B,1024,7,7) → (B,1024)` sebelum
-  di-concat dengan vektor ViT `(B,192)`.
-
----
-
-## 6. Aliran tensor & shape lengkap
-
-Dengan `IMG_SIZE=224`, `USE_VIT=True`, `VIT_DIM=192`, `VIT_PATCH=8`:
-
-| Tahap | Operasi | Shape keluar |
-|-------|---------|--------------|
-| Input | citra | `(B, 3, 224, 224)` |
-| Stem | conv7x7/s2 → BN → ReLU → maxpool/s2 | `(B, 64, 56, 56)` ← **titik fork** |
-| **A** block1→trans1 | DenseBlock1 + SE + SA | `(B, 256, 56, 56)` → `(B, 128, 28, 28)` |
-| **A** block2→trans2 | DenseBlock2 + SE + SA | `(B, 512, 28, 28)` → `(B, 256, 14, 14)` |
-| **A** block3→trans3 | DenseBlock3 + SE + SA | `(B, 1024, 14, 14)` → `(B, 512, 7, 7)` |
-| **A** block4 → norm5 | DenseBlock4 + SE + SA + BN + ReLU | `out = (B, 1024, 7, 7)` |
-| **B** patch_embed | Conv2d k8/s8 pada stem | `(B, 192, 7, 7)` |
-| **B** flatten+CLS+pos | token-isasi + CLS + posisi | `(B, 50, 192)` |
-| **B** encoder → CLS | TransformerEncoder ×4 → ambil `[:,0]` | `vec_vit = (B, 192)` |
-| Fusi | GAP(out)=`(B,1024)` ⊕ `vec_vit` | `(B, 1216)` |
-| MLP + fc | bottleneck → Linear | `(B, 7)` logits |
-
-Saat `return_all=True`, dictionary keluaran kini juga memuat key **`"vit"`**
-(berisi `vec_vit`, atau `None` bila ViT nonaktif), di samping key lama.
-
----
-
-## 7. Training: bagaimana cabang ViT dilatih
-
-File: `src/clouddensenet/finetune.py`. Pembekuan bertahap mengklasifikasikan tiap
-parameter berdasar namanya:
-
-```python
-def bekukan_imagenet(model, latih_baru=True, verbose=True):
-    for n, p in model.named_parameters():
-        if n.startswith("top."):
-            p.requires_grad = True
-        elif n in model.imagenet_keys:
-            p.requires_grad = False
-        else:   # SE, SA, log_q, log_tau, ...
-            p.requires_grad = latih_baru and ".pq." not in n
-```
-
-Parameter cabang ViT bernama prefix **`vit.`** (mis. `vit.cls_token`,
-`vit.encoder...`). Mereka:
-
-- **bukan** `top.*`, dan
-- **bukan** bagian `imagenet_keys` (bobot pra-latih ImageNet),
-
-sehingga jatuh ke cabang `else` → **ikut dilatih sejak Tahap 1** (bersama SE, SA,
-dll.) dan tetap dilatih di seluruh tahap berikutnya. Ini masuk akal: ViT **tidak punya
-bobot ImageNet**, jadi harus dilatih dari awal (from scratch), tidak pernah dibekukan.
-
-Fungsi `muat_imagenet(strict=False)` dan `nolkan_input_nd` **tidak terpengaruh**:
-bobot ViT tak ada di checkpoint ImageNet, dan `strict=False` membiarkan key `vit.*`
-yang "hilang" begitu saja (diinisialisasi acak oleh konstruktor).
-
----
-
-## 8. Kompatibilitas mundur & checkpoint
-
-Desain ini **aditif dan opt-in**:
-
-- **`USE_VIT = False`:** `self.vit = None`, `extra_dim = 0`. Model tidak
-  membangun modul ViT sama sekali; `state_dict` identik dengan versi pra-ViT.
-  Checkpoint lama tetap **dimuat dan dijalankan tanpa perubahan**.
-- **`USE_VIT = True` (default sekarang):** muncul parameter baru berprefix `vit.*`
-  **dan** `TopBlock` memakai `Linear` pertama yang lebih lebar (`1024+extra_dim`:
-  `1024+256` untuk `cloudvit`, `1024+192` untuk `simple`). Artinya **bentuk `top.*`
-  berubah**, sehingga checkpoint ViT **tidak** bisa dimuat ke model non-ViT dan
-  sebaliknya. Simpan/berinama checkpoint ViT secara terpisah.
-- Parameter konstruktor `use_vit` meng-override config per-instance:
-  `CloudDenseNet(use_vit=True)` — dipakai di `test_forward.py` agar tak perlu
-  mengubah config global.
-
----
-
-## 9. Biaya parameter & cara mengaktifkan
-
-Default sekarang (`VIT_ARCH="cloudvit"`) menambah **± 1,37 juta parameter**
-(`vit` 1.237.528; total 8.519.809 → 9.888.409). Varian lama `VIT_ARCH="simple"`
-(`VIT_DIM=192`, `VIT_DEPTH=4`) menambah ± 2,08 juta (total 10.603.009). `pytest` tetap
-**6 passed** (termasuk `test_forward_vit_branch` yang memverifikasi output tetap `(N, 7)`).
-
-**Mengaktifkan lewat config** (`src/clouddensenet/config.py`):
-
-```python
-USE_VIT = True
-```
-
-**Atau per-instance tanpa menyentuh config:**
-
-```python
-from clouddensenet.model import CloudDenseNet
-model = CloudDenseNet(use_vit=True)
-```
-
-**Cek cepat (tanpa dataset/GPU):**
-
-```bash
-pytest                          # harus 6 passed
-python tests/test_forward.py    # smoke test manual
-```
-
----
-
-## 10. Catatan teknis & kejujuran
-
-- **ViT ini sengaja kecil & sederhana.** Memakai `nn.TransformerEncoder` bawaan
-  PyTorch, bukan implementasi ViT penuh (mis. timm). Tujuannya keterbacaan dan nol
-  dependensi tambahan, bukan performa SOTA.
-- **Belum ada bobot pra-latih untuk ViT.** Cabang B dilatih dari nol. Pada dataset
-  kecil (GCD) ini berisiko overfit; karena itu `VIT_DIM`, `VIT_DEPTH` dibuat kecil dan
-  `VIT_DROP=0.1`. Pantau kurva val saat mengaktifkannya.
-- **Efektivitas belum divalidasi di dokumen ini.** Penambahan cabang *bisa* menolong
-  atau *bisa* tidak, tergantung data. Bandingkan run `USE_VIT=False` vs `True` secara
-  adil — **ingat `BATCH_SIZE` juga berubah (8→32)** di commit yang sama, jadi
-  kontrol variabel itu saat eksperimen.
-- **AMP/fp32:** modul ViT tidak dipaksa fp32 seperti `SCConv`. Jika muncul
-  instabilitas numerik di AMP, itu kandidat pertama untuk diperiksa.
-
----
-
-**Dokumen terkait:**
-[`ARSITEKTUR_CLOUDDENSENET.md`](ARSITEKTUR_CLOUDDENSENET.md) ·
-[`PENJELASAN_MODEL_DETAIL.md`](PENJELASAN_MODEL_DETAIL.md) ·
-[`REFERENSI_KOMPONEN_DETAIL.md`](REFERENSI_KOMPONEN_DETAIL.md) ·
-[`../TRAINING.md`](../TRAINING.md)
+# Cabang CloudViT pada model fusi datasetB
+
+> **Lingkup:** penelitian `datasetB_laporan_19-11-2026_0251`, diperbarui 19 November 2026.
+> Angka hasil mengikuti [ringkasan bukti](HASIL_DATASET_B.md) dan artefak run tersebut.
+> Kode digunakan untuk menjelaskan implementasi, bukan menggantikan konfigurasi historis.
+> Laporan mencatat masukan **224×224**; `config.py` saat revisi berisi **512** dan tidak
+> diperlakukan sebagai bukti bahwa run ini memakai 512. Tidak ada pelatihan ulang dalam revisi ini.
+
+## 1. Identitas cabang yang dipakai
+
+Laporan mencatat `USE_VIT=True` dan `VIT_ARCH="cloudvit"`. Struktur checkpoint
+yang diperiksa pada revisi jurnal mendukung cabang CloudViT dengan keluaran
+**256 fitur** dan head bersama **1.280 fitur**. Uraian di bawah mengikuti
+`cloudvit_branch.py` dan pemanggilannya pada `model.py` untuk input 224×224.
+
+Cabang ini membaca tensor citra yang sama dengan cabang DenseNet: RGB setelah
+normalisasi ImageNet. Ia mempunyai stem sendiri dan tidak mengambil peta stem
+64×56×56 dari DenseNet. Dua cabang bertemu pada konkatenasi fitur sebelum head.
+
+## 2. Alur tensor
+
+| Tahap | Modul | Bentuk keluaran |
+|---|---|---|
+| Input | Citra ternormalisasi | B×3×224×224 |
+| I | Conv 3×3 stride 2 → BN → SiLU | B×16×112×112 |
+| L1 | DModule → EModule | B×32×56×56 |
+| L2 | DModule → EModule | B×64×28×28 |
+| G1 | DModule → GModule | B×128×14×14 |
+| G2 | DModule → GModule | B×192×7×7 |
+| G3 | DModule → GModule | B×256×4×4 |
+| Pooling | Adaptive average pool → flatten | B×256 |
+| Fusi | Concat dengan vektor DenseNet B×1024 | B×1280 |
+| Kepala bersama | 1280→512→128→32→16→7 | B×7 |
+
+## 3. Modul lokal dan global
+
+**DModule** mengecilkan resolusi memakai dua jalur stride 2. Jalur pertama
+memakai depthwise-separable convolution, BN dan SiLU. Jalur kedua menambahkan
+konvolusi pointwise serta efficient channel attention (ECA). Kedua keluaran
+digabung dan dikenai channel shuffle.
+
+**EModule** membagi kanal menjadi dua. Separuh melewati jalur identitas dan
+separuh diproses dengan pointwise, depthwise-separable convolution, BN, SiLU
+dan ECA. Keluaran digabung kembali. Operasi tersebut berupa konkatenasi,
+bukan penjumlahan residual pada seluruh tensor.
+
+**GModule** memakai depthwise-separable convolution, mengubah setiap posisi
+spasial menjadi satu token, menerapkan separable self-attention dan MLP dengan
+residual/pre-layer normalization, lalu membentuk kembali peta fitur dan memakai
+konvolusi pointwise. Untuk tiga resolusi, jumlah token adalah **196, 49, dan 16**.
+
+Konfigurasi yang diperiksa memasok `CLOUDVIT_GDEPTH=1` dan dropout 0,1.
+Default argumen konstruktor yang bernilai 2 bukan kedalaman yang dipasok oleh
+`model.py` melalui konfigurasi ini. Kedalaman/dropout dijelaskan sebagai pilihan
+implementasi lokal; tidak dianggap hasil optimasi hyperparameter pada run ini.
+
+## 4. Separable self-attention
+
+Untuk matriks token X, implementasi membentuk skor konteks scalar per token
+`s = softmax(X W_I)` sepanjang sumbu token, vektor konteks
+`c = sum_token(s * X W_K)`, dan keluaran `Y = (ReLU(X W_V) * c) W_O`.
+Pada kode, lapisan linear juga memiliki bias. Biaya agregasi terhadap jumlah
+token bersifat linear untuk dimensi tetap; ini tidak membuktikan model lengkap
+lebih cepat daripada baseline yang belum diukur.
+
+Cabang tidak memakai token CLS atau embedding posisi eksplisit. Ringkasannya
+berasal dari global average pooling, bukan pengambilan token pertama.
+
+## 5. Bagian yang tidak boleh tercampur
+
+`ViTBranch` sederhana pada `vit_branch.py` adalah alternatif kode, dengan
+embedding 192, token CLS dan TransformerEncoder. Uraian patch 8 pada stem,
+50 token, atau head `1024+192=1216` hanya berlaku pada konfigurasi alternatif
+tersebut, **bukan model CloudViT yang dilaporkan**. Tidak ada hasil uji varian
+sederhana atau Transformer tunggal dalam folder acuan.
+
+CloudViT lokal merupakan adaptasi: head publikasi diganti head fusi tujuh kelas,
+dan resolusi tahap global lokal pada input 224 adalah 14/7/4. Publikasi yang
+dibaca pada revisi jurnal mencantumkan 14/8/4. Tidak diklaim reproduksi persis
+arsitektur maupun akurasi publikasi. Lihat [referensi](REFERENSI_KOMPONEN_DETAIL.md).
+
+## 6. Pembekuan dan interpretasi
+
+Pada mode frozen, bobot yang dipetakan dari ImageNet dibekukan, sedangkan
+parameter baru termasuk cabang CloudViT dapat dilatih menurut kode. Jalur ND
+`pq` mempunyai pengecualian pembekuan. Mode ini tidak berarti hanya head yang
+dilatih. Perubahan ke partial/full mengikuti jadwal pada ringkasan hasil.
+
+Tidak ada ablasi yang memisahkan kontribusi CloudViT terhadap F1 atau akurasi.
+Grad-CAM yang tersedia menargetkan cabang DenseNet dan tidak boleh disebut
+visualisasi keseluruhan cabang CloudViT.

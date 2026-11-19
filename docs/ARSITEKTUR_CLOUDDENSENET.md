@@ -1,263 +1,96 @@
-# Arsitektur CloudDenseNet
+# Arsitektur model fusi DenseNet lokal dan CloudViT
 
-Dokumentasi arsitektur model **CloudDenseNet** — DenseNet-121 yang dimodifikasi untuk
-klasifikasi citra langit ke **7 kelas awan** (dataset GCD). Dokumen ini menjelaskan
-setiap komponen, alur forward, dimensi tensor, dan modifikasi terhadap DenseNet-121 standar.
+> **Lingkup:** penelitian `datasetB_laporan_19-11-2026_0251`, diperbarui 19 November 2026.
+> Angka hasil mengikuti [ringkasan bukti](HASIL_DATASET_B.md) dan artefak run tersebut.
+> Kode digunakan untuk menjelaskan implementasi, bukan menggantikan konfigurasi historis.
+> Laporan mencatat masukan **224×224**; `config.py` saat revisi berisi **512** dan tidak
+> diperlakukan sebagai bukti bahwa run ini memakai 512. Tidak ada pelatihan ulang dalam revisi ini.
 
-> Sumber kebenaran: `src/clouddensenet/{model,blocks,attention,conv,spectral,losses,
-> pretrained,finetune}.py` dan `src/clouddensenet/config.py`.
-> Hyperparameter default yang dipakai dokumen ini: `growth_rate=32`, `ND_CH=8`,
-> `USE_SE=True`, `USE_SCCONV=True`, `USE_BR=True`, `NUM_CLASSES=7`,
-> `TOP_HIDDEN=(512,128,32,16)`.
->
-> **Catatan cabang ViT.** Secara default `USE_VIT=True` dengan `VIT_ARCH="cloudvit"`,
-> sehingga model sebenarnya **dua-cabang** (DenseNet + CloudViT). Dokumen ini fokus pada
-> **cabang DenseNet**; cabang CloudViT dibahas terpisah di
-> [`CABANG_VIT_DETAIL.md`](CABANG_VIT_DETAIL.md).
+## 1. Model yang mempunyai hasil evaluasi
 
----
+Model penelitian ini mempunyai dua cabang paralel: backbone DenseNet-121 yang
+dimodifikasi dan ekstraktor CloudViT lokal. Keduanya menerima citra RGB yang
+sudah dinormalisasi ImageNet. Istilah input `raw` pada kode berarti cabang membaca
+citra sebelum stem DenseNet, bukan RGB sebelum normalisasi.
 
-## 1. Gambaran umum
+```text
+RGB [B,3,224,224] setelah normalisasi
+  ├─ DenseNet lokal: stem → block 1–4 + atensi → BN/ReLU → GAP → [B,1024]
+  └─ CloudViT: I → L1 → L2 → G1 → G2 → G3 → GAP             → [B,256]
+                              concat → [B,1280]
+                    1280 → 512 → 128 → 32 → 16 → 7 logit
 
-CloudDenseNet = **backbone bergaya DenseNet-121** (stem + 4 dense block + 3 transisi)
-yang diperkaya dengan beberapa modifikasi:
-
-| Modifikasi | Modul | Peran |
-|------------|-------|-------|
-| **SEBlock** | `attention.SEBlock` | Atensi channel (squeeze-and-excitation) — di tiap bottleneck DenseLayer **dan** di akhir tiap block. |
-| **SCConv** | `conv.SCConv` | Konvolusi ter-normalisasi cosine, dipaksa fp32 agar stabil di AMP, menggantikan conv 3×3 di DenseLayer. |
-| **SpatialAttnBR** | `attention.SpatialAttnBR` | Atensi spasial + 1 channel λ rasio Biru/Merah (sadar-fisika). |
-| **Channel ND** | jalur `pq` di `DenseLayer` | `ND_CH=8` channel ekstra per layer dari rasio ter-normalisasi `(P−Q)/(P+Q)`. |
-| **Top Block** | `blocks.TopBlock` | GAP → FC(1024→512→128→32→16) + BN/ReLU tiap lapis → Dropout(0.8) → FC(16→7). |
-| **Cabang CloudViT** | `cloudvit_branch.CloudViTBranch` | Cabang Transformer paralel (default `USE_VIT=True`), keluaran 256-dim difusikan ke Top Block. Lihat [`CABANG_VIT_DETAIL.md`](CABANG_VIT_DETAIL.md). |
-| **Focal Loss** | `losses.FocalLoss` | γ=2.0, menangani ketidakseimbangan kelas. |
-| **Fine-tuning bertahap** | `finetune.py` | Transfer learning ImageNet 7 fase (beku → buka 3-4 → full). |
-
----
-
-## 2. Alur forward (dimensi tensor)
-
-Input: `x` = `[B, 3, 224, 224]` (RGB ternormalisasi ImageNet) dan opsional `lam`
-= `[B, 1, H, W]` (peta λ B/R dari `siapkan_batch`).
-
-```
-x [B,3,224,224]
- │
- ▼  Stem: Conv7×7(s2) → BN → ReLU → MaxPool3×3(s2)
-s  [B, 64, 56, 56]
- │
- ▼  Block1 (6 DenseLayer)  → SE1 → SpatialAttnBR(·,λ)
-b1 [B, 256, 56, 56]
- │  Trans1: BN-ReLU-Conv1×1(256→128) → AvgPool2×2
-t1 [B, 128, 28, 28]
- │
- ▼  Block2 (12 DenseLayer) → SE2 → SpatialAttnBR(·,λ)
-b2 [B, 512, 28, 28]
- │  Trans2: BN-ReLU-Conv1×1(512→256) → AvgPool2×2
-t2 [B, 256, 14, 14]
- │
- ▼  Block3 (24 DenseLayer) → SE3 → SpatialAttnBR(·,λ)
-b3 [B, 1024, 14, 14]
- │  Trans3: BN-ReLU-Conv1×1(1024→512) → AvgPool2×2
-t3 [B, 512, 7, 7]
- │
- ▼  Block4 (16 DenseLayer) → SE4 → SpatialAttnBR(·,λ)
-b4 [B, 1024, 7, 7]
- │  norm5 (BN) → ReLU
-out [B, 1024, 7, 7]
- │
- ▼  Top Block: GAP → Flatten → FC(1024→512→128→32→16) + BN/ReLU → Dropout(0.8) → FC(16→7)
-logits [B, 7]
+RGB [0,1] sebelum normalisasi → peta λ → atensi spasial pada cabang DenseNet
 ```
 
-Urutan per-block konsisten: **DenseBlock → SEBlock (channel) → SpatialAttnBR (spasial+λ)**,
-baru masuk Transition. `forward(..., return_all=True)` mengembalikan dict berisi semua
-tensor antara (`stem, block1, trans1, …, out, logits`) untuk visualisasi/debug.
+Head dengan masukan 1.280 fitur didukung struktur checkpoint yang diperiksa pada
+revisi jurnal. Head 1.024 fitur adalah varian tanpa cabang global; head 1.216 fitur
+adalah varian dengan ViT sederhana 192 fitur. Keduanya bukan arsitektur checkpoint
+yang menghasilkan metrik datasetB ini.
 
----
+## 2. Dimensi cabang DenseNet pada input 224×224
 
-## 3. Komponen rinci
+| Tahap | Susunan | Keluaran tanpa dimensi batch |
+|---|---|---|
+| Stem | Conv 7×7 stride 2, BN, ReLU, max pool 3×3 stride 2 | 64×56×56 |
+| Block 1 | 6 DenseLayer, SE, SpatialAttnBR | 256×56×56 |
+| Transisi 1 | BN, ReLU, conv 1×1, average pool 2×2 | 128×28×28 |
+| Block 2 | 12 DenseLayer, SE, SpatialAttnBR | 512×28×28 |
+| Transisi 2 | BN, ReLU, conv 1×1, average pool 2×2 | 256×14×14 |
+| Block 3 | 24 DenseLayer, SE, SpatialAttnBR | 1024×14×14 |
+| Transisi 3 | BN, ReLU, conv 1×1, average pool 2×2 | 512×7×7 |
+| Block 4 | 16 DenseLayer, SE, SpatialAttnBR | 1024×7×7 |
+| Akhir | norm5, ReLU, global average pooling | 1024 fitur |
 
-### 3.1 Stem
+Growth rate adalah 32. Dalam tiap DenseLayer, BN/ReLU/conv 1×1 menghasilkan
+bottleneck 128 kanal. Setelah BN/ReLU dan SE, jalur SCConv menghasilkan 24 kanal,
+sedangkan jalur konvolusi `pq` + softplus menghasilkan delapan kanal rasio
+`(P−Q)/(P+Q+0.001)`. Konkatenasi keduanya menambah 32 kanal per layer.
+ND merupakan rasio fitur yang dipelajari; bukan pengukuran spektral langsung.
 
-```
-Conv2d(3→64, k=7, s=2, p=3, bias=False) → BatchNorm2d(64) → ReLU → MaxPool2d(k=3, s=2, p=1)
-```
-Mereduksi 224×224 → 56×56, menaikkan channel 3 → 64. Identik DenseNet-121.
+## 3. Atensi dan konvolusi lokal
 
-### 3.2 DenseLayer (unit penyusun tiap block)
+| Komponen | Implementasi terdokumentasi | Batas interpretasi |
+|---|---|---|
+| SE | GAP → conv 1×1 → ReLU → conv 1×1 → sigmoid, reduksi 16 | Pembobotan kanal; kontribusi akurasinya belum diablasi |
+| SpatialAttnBR | Mean dan maksimum lintas kanal, ditambah peta λ; conv 7×7 → sigmoid | Petunjuk warna, bukan segmentasi awan yang sudah divalidasi |
+| SCConv | Normalisasi respons konvolusi dengan norma patch/kernel, q dan pangkat tau terlatih | Bukan jaminan invariansi pencahayaan atau sensor |
+| Peta λ | Selisih B−R dibagi B+R, dikurangi median valid, lalu tanh | Dihitung sebelum normalisasi ImageNet |
 
-Setiap DenseLayer menerima **concat semua fitur sebelumnya** (koneksi dense), lalu:
+SE dipasang pada bottleneck setiap DenseLayer dan setelah setiap dense block.
+SpatialAttnBR mengikuti SE setelah dense block. Peta λ diubah ukurannya dan
+dikalikan skala 10 pada atensi menurut kode. Rumus terperinci ada di
+[PENJELASAN_MODEL_DETAIL.md](PENJELASAN_MODEL_DETAIL.md).
 
-```
-x (concat)
- → BN → ReLU → Conv1×1 (in → 4·k = 128)   # bottleneck H_l
- → BN → ReLU
- → SE(128)                                 # atensi channel di bottleneck
- → SCConv 3×3 (128 → k−nd = 24)            # jalur utama
- ├─ (jika nd>0) Conv3×3 (128 → 2·nd=16) → softplus → P,Q
- │               → (P−Q)/(P+Q+eps)  (nd=8 channel)
- → concat[ SCConv(24), ND(8) ] = 32 = growth_rate
-```
+## 4. Cabang CloudViT dan kepala bersama
 
-- **Output tiap layer = `growth_rate` (32) channel**, sebagian dari SCConv (24) dan
-  sebagian dari jalur ND rasio ter-normalisasi (8).
-- Channel ND membawa informasi rasio dua peta fitur `(P−Q)/(P+Q)` — mirip semangat λ B/R
-  tapi dipelajari. Bobot pembacanya **dinolkan saat init** (`nolkan_input_nd`) agar awal
-  training setara ImageNet murni.
+CloudViT lokal menghasilkan urutan fitur 16×112×112 → 32×56×56 → 64×28×28 →
+128×14×14 → 192×7×7 → 256×4×4 → GAP 256 fitur. Detail modul dan perbedaannya
+dari ViT sederhana ada di [CABANG_VIT_DETAIL.md](CABANG_VIT_DETAIL.md).
 
-**Pertumbuhan channel per block** (mulai dari `in_channels`, +32 per layer):
-
-| Block | #Layer | Channel masuk → keluar | Spasial |
-|-------|-------:|------------------------|---------|
-| Block1 | 6  | 64 → 64 + 6·32 = **256**   | 56×56 |
-| Block2 | 12 | 128 → 128 + 12·32 = **512** | 28×28 |
-| Block3 | 24 | 256 → 256 + 24·32 = **1024** | 14×14 |
-| Block4 | 16 | 512 → 512 + 16·32 = **1024** | 7×7 |
-
-> Konfigurasi layer (6/12/24/16) = **DenseNet-121** persis.
-
-### 3.3 Transition Layer (1–3)
-
-```
-BN → ReLU → Conv1×1 (reduksi channel 50%) → AvgPool2×2 (spasial ÷2)
-```
-| Transisi | Channel | Spasial |
-|----------|---------|---------|
-| Trans1 | 256 → 128 | 56 → 28 |
-| Trans2 | 512 → 256 | 28 → 14 |
-| Trans3 | 1024 → 512 | 14 → 7 |
-
-### 3.4 SEBlock — atensi channel
-
-```
-GAP → Conv1×1(C→C/16) → ReLU → Conv1×1(C/16→C) → Sigmoid → skalakan x per-channel
-```
-- Rasio reduksi `r=16` (Hu et al., 2018).
-- **Inisialisasi ≈ identitas:** bobot layer akhir di-nol-kan, bias = `SE_INIT_BIAS=3.0`
-  → `sigmoid(3) ≈ 0.953`, jadi di awal SE hampir tidak mengubah fitur (stabil untuk
-  transfer learning).
-- Dipakai dua tempat: di dalam tiap DenseLayer (pada bottleneck 128) dan sebagai
-  `se1..se4` di akhir tiap block (256/512/1024/1024).
-
-### 3.5 SpatialAttnBR — atensi spasial sadar-fisika
-
-```
-m = concat[ mean(x) , max(x) , λ ]    # 3 channel
-a = sigmoid( Conv_k×k(m) )            # k=7, padding reflect
-out = x * a
-```
-- Turunan dari `SpatialAttn` biasa (yang hanya pakai mean+max → 2 channel); versi BR
-  menambah **1 channel λ** sehingga conv punya 3 channel input.
-- `λ` di-`interpolate` ke ukuran fitur dan diskalakan `LAM_SCALE=10.0`.
-- **Fallback:** jika `lam=None`, λ diisi nol → berperilaku seperti SpatialAttn biasa.
-- Init bias = 3.0 (sigmoid≈0.95) → awal ≈ identitas.
-
-### 3.6 SCConv — konvolusi cosine ter-normalisasi
-
-Menggantikan conv 3×3 di DenseLayer (`USE_SCCONV=True`). Menghitung konvolusi lalu
-menormalkannya jadi cosine similarity antara patch input & kernel:
-
-```
-cos = dot / ((‖x_patch‖ + q) · (‖w‖ + eps)),  di-clamp [−1,1]
-out = sign(dot) · (|cos| + eps)^τ
-```
-- `q` (skalar, `log_q`) dan `τ` (per-channel, `log_tau`) dipelajari (dijamin > 0 via `exp`).
-- **Dipaksa fp32** (`autocast enabled=False`) agar stabil di bawah AMP.
-- Padding `reflect`.
-
-### 3.7 Peta λ B/R (`spectral.lambda_relatif`)
-
-Dihitung di `siapkan_batch` pada citra **[0,1] yang belum dinormalisasi**:
-
-```
-λ_raw = (B − R) / (B + R + eps)              # > 0 biru/langit, < 0 putih/awan
-λ = 0.5 · tanh( (λ_raw − median) / 0.5 ) · valid_mask    # soft-clamp |λ| < 0.5
-```
-- `valid_mask` membuang piksel gelap (<0.10) dan silau (>0.97).
-- Median per-gambar dikurangi agar λ **relatif** terhadap kondisi tiap citra.
-- Inilah fitur fisik yang dikonsumsi SpatialAttnBR.
-
-### 3.8 Top Block (kepala klasifikasi)
-
-```
-GAP(1×1) → Flatten
-  → [Linear(1024→512) → BN1d(512) → ReLU]
-  → [Linear(512→128)  → BN1d(128) → ReLU]
-  → [Linear(128→32)   → BN1d(32)  → ReLU]
-  → [Linear(32→16)    → BN1d(16)  → ReLU]
-  → Dropout(0.8) → Linear(16→7)
-```
-Lebar lapisan tersembunyi diambil dari `config.TOP_HIDDEN = (512, 128, 32, 16)` dan
-dropout dari `P_DROP_TOP = 0.8`. Menghasilkan **logit** mentah `[B, 7]` (softmax
-dilakukan di loss). Bottleneck yang menyempit bertahap (512→128→32→16) berperan sebagai
-regularisasi. Bila cabang CloudViT aktif (`extra_dim=256`), `Linear` pertama melebar
-menjadi `1024+256 → 512`.
-
----
-
-## 4. Loss & inisialisasi
-
-- **FocalLoss** (`α=1.0`, `γ=2.0`): `FL = α·(1−pₜ)^γ · CE`. Menekan kontribusi contoh
-  mudah → fokus ke kelas sulit/minoritas (mis. `7_mixed`).
-- **LeCun Uniform** (`init_new_layers`): hanya untuk **lapisan baru** (SE, cabang,
-  Top Block) — jangan di-`apply` ke seluruh model agar bobot ImageNet tidak tertimpa.
-
----
-
-## 5. Transfer learning & fine-tuning bertahap
-
-Backbone di-inisialisasi dari **DenseNet-121 ImageNet** (`muat_imagenet`), lalu dilatih
-lewat jadwal 7 fase (`config.PHASES`) dengan strategi pembekuan di `finetune.py`:
-
-| Fase (epoch) | LR | Status | Yang dilatih |
-|-------------:|----|--------|--------------|
-| ≤10 | 1e-3 | `frozen` (`bekukan_imagenet`) | Top Block + lapisan baru (SE/SA/log_q/log_tau) |
-| ≤20 | 1e-4 | `frozen` | idem (tahap 2) |
-| ≤30 | 1e-5 | `partial` (`buka_blok_3_4`) | + Block3-4, trans3, norm5 |
-| ≤40 | 5e-5 | `partial` | idem (unfreeze Dense Block 3-4) |
-| ≤45 | 1e-5 | `partial` | idem (lanjut, LR diturunkan ke 1e-5) |
-| ≤60 | 1e-5 | `full` (`buka_semua`) | seluruh backbone |
-| ≤80 | 1e-6 | `full` | full defrost end-to-end |
-
-Catatan penting:
-- `bekukan_imagenet` **melewati jalur `.pq.`** saat beku (pembacanya `h.2` beku = 0).
-- `model.bn_beku`: karena SCConv mengubah distribusi aktivasi, BatchNorm perlu adaptasi —
-  `set_bn_beku_eval` menjaga BN ImageNet yang beku agar tidak meng-update running stats.
-- `nolkan_input_nd`: bobot pembaca channel ND dinolkan → awal training = ImageNet murni.
-
-Optimasi: **AdamW** (`WEIGHT_DECAY=1e-2`), **grad clip** norma 5.0.
-
----
-
-## 6. Ringkasan modifikasi vs DenseNet-121 standar
-
-| Aspek | DenseNet-121 | CloudDenseNet |
-|-------|--------------|---------------|
-| Conv 3×3 di DenseLayer | Conv standar | **SCConv** (cosine, fp32) |
-| Atensi channel | — | **SEBlock** (bottleneck + akhir block) |
-| Atensi spasial | — | **SpatialAttnBR** (+λ B/R sadar-fisika) |
-| Channel ekstra | — | **ND** `(P−Q)/(P+Q)`, 8/layer |
-| Kepala | FC(1024→1000) | **Top Block** (1024→512→128→32→16→7, dropout 0.8) |
-| Cabang global | — | **CloudViT** paralel (default `USE_VIT=True`), fusi 256-dim |
-| Loss | CrossEntropy | **Focal Loss** (γ=2.0) |
-| Training | — | **fine-tuning ImageNet 7 fase** |
-
-Konfigurasi kedalaman block (6/12/24/16), stem, dan transisi **tetap sama** dengan
-DenseNet-121, sehingga bobot ImageNet bisa dipindahkan langsung.
-
----
-
-## 7. Verifikasi cepat
-
-Smoke test membangun model & menjalankan satu forward pass (tanpa dataset/GPU),
-memverifikasi shape output `(N, 7)` dan key `return_all=True`, serta mencetak jumlah parameter:
-
-```bash
-pytest                         # tests/test_forward.py
-python tests/test_forward.py   # cetak "forward pass sukses" + jumlah parameter
+```text
+Concat(GAP(DenseNet), GAP(CloudViT)) = 1280 fitur
+Linear(1280,512) → BN1d → ReLU
+Linear(512,128)  → BN1d → ReLU
+Linear(128,32)   → BN1d → ReLU
+Linear(32,16)    → BN1d → ReLU
+Dropout(0.8) → Linear(16,7)
 ```
 
----
+Dropout 0,8 adalah nilai pada laporan, bukan nilai yang dapat dibaca dari tensor
+bobot. Keluaran merupakan logit; kelas dipilih dengan argmax. Softmax dipakai
+untuk probabilitas, bukan lapisan tambahan sebelum CrossEntropy pada focal loss.
 
-*Dibuat sebagai dokumentasi arsitektur. Perbarui bila modul di `src/clouddensenet/` berubah.*
+## 5. Pelatihan dan status pembanding
+
+Backbone menerima bobot DenseNet-121 ImageNet yang dipetakan/disesuaikan ke modul
+lokal. SCConv, ND, atensi, cabang CloudViT dan head membuat fungsi model berbeda
+dari DenseNet-121 asli; tidak diklaim identik dengan model ImageNet pada inisialisasi.
+AdamW, focal loss, tujuh tahap, dan durasi dijelaskan pada
+[HASIL_DATASET_B.md](HASIL_DATASET_B.md).
+
+Empat rancangan pada dokumen penelitian mencakup DenseNet-121, DenseNet lokal,
+Transformer tunggal dan model fusi. Folder hasil yang ditetapkan hanya berisi
+evaluasi model fusi. Tidak ada nilai baseline atau ablasi yang ditambahkan.
+Jumlah parameter dan dimensi adalah uraian struktur, bukan hasil uji akurasi,
+waktu inferensi, atau penggunaan memori.

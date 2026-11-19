@@ -1,6 +1,9 @@
 # Panduan Menarik Pembaruan (git pull) — CloudDenseNet
 
-*Langkah memperbarui salinan lokal dengan perubahan terbaru dari GitHub*
+> Panduan kolaborasi umum, bukan protokol pelatihan atau hasil datasetB.
+> Angka penelitian mengikuti [HASIL_DATASET_B.md](HASIL_DATASET_B.md).
+> Pembaruan kode/config tidak mengubah catatan historis run. Simpan versi kode,
+> konfigurasi dan manifest sebelum menjalankan eksperimen baru.
 
 Dokumen ini untuk kolaborator yang **sudah meng-clone** proyek dan ingin mengambil
 perubahan terbaru dari repository. `git pull` menggabungkan dua langkah: `git fetch`
@@ -67,8 +70,8 @@ Ganti `<nama-branch>` dengan branch tempatmu bekerja, misalnya:
 git pull origin main
 ```
 
-Branch lain yang ada di repo ini: `docs/panduan-kolaborasi`,
-`Stratified-K-Fold-Cross-Validation`.
+Periksa branch yang tersedia dengan `git branch -a`. Nama branch tidak membuktikan
+bahwa prosedur seperti cross-validation dipakai pada run datasetB ini.
 
 > 💡 Jika branch lokalmu sudah "melacak" (tracking) branch remote-nya, cukup `git pull`
 > tanpa argumen. Cek dengan `git status` — baris *"Your branch is up to date with

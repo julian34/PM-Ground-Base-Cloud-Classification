@@ -1,6 +1,9 @@
 # Panduan Pemasangan Awal — CloudDenseNet
 
-*Langkah menyiapkan proyek dari hasil clone (untuk pengguna baru)*
+> Panduan operasional untuk **eksperimen baru yang terpisah**. Ini bukan catatan
+> instalasi historis run datasetB. Hasil dan koreksi perangkat penelitian ada di
+> [HASIL_DATASET_B.md](HASIL_DATASET_B.md). Konfigurasi aktif dapat berbeda dari run,
+> khususnya ukuran citra: laporan 224×224, kode saat revisi 512.
 
 Dokumen ini menjelaskan cara memasang proyek CloudDenseNet dari awal ketika seseorang
 baru saja meng-clone repository. Beberapa folder (lingkungan virtual, dataset, dan hasil
@@ -87,61 +90,48 @@ python tests/test_forward.py
 Keluaran harus memuat `forward pass sukses` beserta jumlah parameter model. Jika ini
 berhasil, instalasi inti sudah benar.
 
-## Langkah 5 — Siapkan dataset
+## Langkah 5 — Siapkan salinan datasetB untuk run baru
 
-> ⚠️ Dataset `data/raw/GCD.zip` dan folder `data/` **TIDAK** ikut di-clone (ada di
-> `.gitignore`). Pengguna baru harus memperoleh `GCD.zip` secara terpisah dari pemilik
-> proyek, lalu meletakkannya di `data/raw/GCD.zip`.
+Dataset dan artefak tidak disertakan pada clone. Gunakan arsip `data/raw/dataset_b.zip`
+yang sudah diverifikasi identitasnya. Untuk membaca hasil penelitian yang ada,
+tidak perlu mengekstrak atau membagi ulang dataset.
 
-Setelah file `GCD.zip` tersedia di `data/raw/`, ekstrak dan split menjadi train/val/test:
-
-**Ekstrak (PowerShell):**
-
-```powershell
-Expand-Archive data\raw\GCD.zip -DestinationPath data\raw\
-```
-
-**Split stratified (15% val, seed 42) ke `data/processed/`:**
+Contoh berikut hanya untuk membuat **split baru di lokasi berbeda**; jangan
+menimpa `data/processed/dataset_b` yang terkait hasil penelitian:
 
 ```bash
-python scripts/split_dataset.py
+python scripts/split_dataset_experiment.py --zip data/raw/dataset_b.zip --out data/processed/dataset_b_replikasi --split 0.70 0.20 0.10 --seed 42
 ```
 
-Dataset punya 7 kelas (indeks 0–6):
+Simpan manifest anggota split beserta hash citra. Seed dan rasio yang sama saja
+belum menjamin bahwa anggota split identik dengan run historis. Hitungan acuan
+run ada pada [DATASET_SPLIT.md](DATASET_SPLIT.md).
 
-- `1_cumulus, 2_altocumulus, 3_cirrus, 4_clearsky, 5_stratocumulus, 6_cumulonimbus, 7_mixed`
+## Langkah 6 — Jalankan eksperimen baru setelah konfigurasi diperiksa
 
-## Langkah 6 — Jalankan training
-
-Jalankan training dengan konfigurasi default dari `config.py`, atau atur argumen sendiri:
+Bandingkan semua pengaturan dengan [HASIL_DATASET_B.md](HASIL_DATASET_B.md),
+terutama masukan **224×224**, cabang CloudViT dan head 1280→512→128→32→16→7.
+`config.py` saat revisi memakai 512; menjalankan perintah berikut tanpa
+menyesuaikan konfigurasi tidak mereproduksi pengaturan yang dicatat laporan.
+Simpan salinan konfigurasi dan versi kode sebelum menjalankan training.
 
 ```bash
-python scripts/train.py
-# atau atur argumen:
-python scripts/train.py --data-root data/processed --epochs 80 --run-name cloud
+python scripts/train.py --data-root data/processed/dataset_b_replikasi --epochs 80 --seed 42 --run-name datasetB_replikasi_baru --no-resume
 ```
 
-- Checkpoint terbaik → `artifacts/checkpoints/<run>_Versi01.pth`
-- Checkpoint terakhir (bisa di-resume) → `..._last.pth`
-- Kurva & confusion matrix → `artifacts/results/`
+Nama run harus unik dan belum dipakai agar checkpoint penelitian asli tidak
+tertimpa. Perintah ini adalah contoh operasional, tidak dijalankan saat revisi
+dokumentasi, dan tidak menjamin hasil metrik identik.
 
-TensorBoard aktif otomatis saat training; buka dasbor di:
+Checkpoint dan keluaran baru berada di `artifacts/checkpoints` dan
+`artifacts/results`. Jangan arahkan keluaran baru ke folder hasil acuan
+`datasetB_laporan_19-11-2026_0251`.
 
-```
-http://localhost:6006
-```
+## Ringkasan penggunaan
 
-Semua hyperparameter ada di `src/clouddensenet/config.py`. Set `DEBUG = True` untuk uji
-cepat 1–3 batch/epoch di CPU.
-
-## Ringkasan cepat
-
-1. Clone repo dan `cd` ke foldernya.
-2. Buat `.venv` (Python 3.10+) lalu aktifkan.
-3. `pip install -r requirements.txt` (pilih index cu124 atau cpu) + `pip install -e .`
-4. Jalankan `pytest` untuk verifikasi.
-5. Dapatkan `GCD.zip`, ekstrak, lalu `python scripts/split_dataset.py`.
-6. `python scripts/train.py` dan pantau di http://localhost:6006.
+Untuk penulisan laporan, baca artefak yang sudah ada. Untuk eksperimen baru,
+siapkan lingkungan, cocokkan konfigurasi, gunakan direktori/nama run berbeda,
+dan catat manifest data serta perangkat yang benar-benar digunakan.
 
 ## Troubleshooting ringkas
 
@@ -150,5 +140,5 @@ cepat 1–3 batch/epoch di CPU.
 - **`Activate.ps1` ditolak di PowerShell:** jalankan `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
   sekali, lalu aktifkan ulang.
 - **`ModuleNotFoundError: clouddensenet`:** pastikan sudah `pip install -e .` di dalam venv yang aktif.
-- **Training tidak menemukan data:** pastikan `data/processed/{train,val,test}` sudah terbentuk dari
+- **Training tidak menemukan data:** pastikan `data/processed/dataset_b_replikasi/{train,val,test}` sudah terbentuk dari
   Langkah 5, atau arahkan `--data-root` ke lokasi yang benar.
