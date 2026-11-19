@@ -26,6 +26,7 @@ laporan/
 .agents/
 .claude/skills/
 skills-lock.json
+AGENTS.md
 
 # OS / editor
 .DS_Store
