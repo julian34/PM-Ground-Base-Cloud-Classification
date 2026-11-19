@@ -10,8 +10,11 @@
 
 Run ini memakai repartisi lokal tujuh kelas GCD pada
 `data/processed/dataset_b/{train,val,test}/<kelas>/`.
-Nama `dataset_b` adalah nama eksperimen lokal, bukan bukti bahwa sumber datanya
-berbeda dari GCD. Pemeriksaan sebelumnya pada revisi jurnal menunjukkan arsip
+**DatasetB bukan dataset independen.** Dataset ini dibentuk dengan menggabungkan
+**10.000 citra training resmi GCD** dan **9.000 citra test resmi GCD** menjadi
+satu pool berisi **19.000 citra**, kemudian membaginya ulang menjadi training,
+validation, dan test dengan rasio target **70%:20%:10%**. Nama `dataset_b`
+hanya merupakan nama eksperimen lokal. Pemeriksaan sebelumnya menunjukkan arsip
 `data/raw/dataset_b.zip` dan `data/raw/GCD.zip` identik secara SHA-256:
 
 `8c1a1ab93dcac62247e34965f1f118089a4cf21ab12f7c626c54d13662950bd1`
@@ -36,16 +39,27 @@ total aktual tidak harus tepat sama dengan perkalian rasio pada total dataset.
 
 ## 3. Prosedur yang terdokumentasi
 
-`scripts/split_dataset_experiment.py` mengumpulkan citra per kelas dari arsip,
-menggabungkannya ke pool kelas, mengacak dengan seed yang ditentukan, kemudian
-membagi ke tiga split. Konfigurasi datasetB mencatat rasio `(0.70,0.20,0.10)`
-dan seed 42. Ini berbeda dari prosedur lama yang mengambil validasi 15% hanya
-dari folder train asal.
+Teknik pembagian mengikuti prosedur yang dilaporkan Tu dkk. pada
+ALGA-DenseNet: split resmi 10.000/9.000 digabung terlebih dahulu dan pool
+19.000 citra direpartisi 70:20:10 sebelum augmentasi. Implementasi lokal pada
+`scripts/split_dataset_experiment.py` mengumpulkan citra menurut kelas,
+mengacaknya dengan seed 42, lalu membagi secara terstratifikasi per kelas.
+Pembulatan per kelas menghasilkan total aktual 13.299/3.800/1.901.
+
+Rujukan: B. Tu dkk., “ALGA-DenseNet ground-based cloud classification network
+based on multi-scale features,” *PLOS ONE*, 20(10):e0333999, 2025,
+https://doi.org/10.1371/journal.pone.0333999.
+
+Yang diadopsi adalah **teknik penggabungan split dan repartisi data**. Ukuran
+masukan, augmentasi, arsitektur, optimizer, dan jadwal pelatihan datasetB tetap
+mengikuti artefak run penelitian ini dan tidak disamakan dengan ALGA-DenseNet.
 
 Pembagian lama **8.501/1.499/9.000** dan konstanta lama
 `N_SPLIT=(8340,1471,9000)` **tidak berlaku untuk hasil datasetB ini**.
 Uji 1.901 citra adalah held-out pada repartisi lokal; bukan test resmi GCD yang
-dipertahankan utuh. Pool repartisi dapat mencakup train/test arsip asal.
+dipertahankan utuh. Karena kedua split resmi digabung, citra dari test resmi
+GCD dapat berada pada train datasetB. Checkpoint datasetB karena itu tidak boleh
+diuji kembali pada 9.000 citra test resmi dan disebut sebagai evaluasi independen.
 
 Folder validasi datasetB sudah tersedia. Jalur kode yang mengambil validasi
 secara runtime bila folder val tidak ada bukan prosedur yang digunakan untuk

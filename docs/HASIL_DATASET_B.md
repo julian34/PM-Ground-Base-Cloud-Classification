@@ -4,6 +4,13 @@ Revisi 19 November 2026. Satu run yang dilaporkan: **fusi DenseNet lokal dan Clo
 tujuh kelas citra langit. Folder acuan:
 `artifacts/results/datasetB_laporan_19-11-2026_0251`.
 
+DatasetB adalah **GCD yang dipartisi ulang**, bukan dataset independen. Split
+resmi GCD yang terdiri dari 10.000 citra latih dan 9.000 citra uji digabung
+menjadi 19.000 citra, kemudian dibagi ulang menjadi latih/validasi/uji dengan
+rasio target 70:20:10. Teknik repartisi ini mengikuti Tu dkk. (2025),
+https://doi.org/10.1371/journal.pone.0333999. Jumlah aktual akibat pembulatan
+per kelas adalah 13.299/3.800/1.901.
+
 ## 1. Asal bukti dan urutan penggunaan
 
 | Bukti | Informasi yang didukung |
