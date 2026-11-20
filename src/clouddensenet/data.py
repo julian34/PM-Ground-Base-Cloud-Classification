@@ -49,13 +49,17 @@ def seed_worker(worker_id):
     random.seed(worker_seed)
 
 
-def build_transforms():
-    """Augmentasi train (on-the-fly) + transform val. Normalisasi dilakukan di siapkan_batch."""
+def build_transforms(img_size=IMG_SIZE):
+    """Augmentasi train (on-the-fly) + transform val. Normalisasi dilakukan di siapkan_batch.
+
+    `img_size` default `IMG_SIZE` (config). Override lewat CLI `train.py --img-size`
+    menata ulang Resize/Pad/CenterCrop agar konsisten di satu ukuran.
+    """
     train_tf = transforms.Compose([
-        transforms.Resize((IMG_SIZE, IMG_SIZE)),
-        transforms.Pad(IMG_SIZE // 4, padding_mode="reflect"),
+        transforms.Resize((img_size, img_size)),
+        transforms.Pad(img_size // 4, padding_mode="reflect"),
         transforms.RandomAffine(degrees=15, translate=(0.10, 0.10)),
-        transforms.CenterCrop(IMG_SIZE),
+        transforms.CenterCrop(img_size),
         transforms.RandomHorizontalFlip(0.5),
         *([transforms.RandomChoice([transforms.RandomRotation((a, a)) for a in (0, 90, 180, 270)]),
            transforms.RandomVerticalFlip(0.5)] if STRONG_AUG else []),
@@ -64,7 +68,7 @@ def build_transforms():
         *([transforms.RandomGrayscale(0.2), transforms.RandomEqualize(0.2)] if STRONG_AUG else []),
         transforms.ToTensor(),
     ])
-    val_tf = transforms.Compose([transforms.Resize((IMG_SIZE, IMG_SIZE)), transforms.ToTensor()])
+    val_tf = transforms.Compose([transforms.Resize((img_size, img_size)), transforms.ToTensor()])
     return train_tf, val_tf
 
 
@@ -82,14 +86,17 @@ def _stratified_val_indices(targets, val_frac, seed=SEED):
     return sorted(train_idx), sorted(val_idx)
 
 
-def build_loaders(data_root, device):
+def build_loaders(data_root, device, batch_size=BATCH_SIZE, img_size=IMG_SIZE):
     """Bangun train_loader & val_loader dari <data_root>/train (+ /val bila ada).
 
     Jika `<data_root>/val` tidak ada (kasus dataset GCD yang disediakan), validasi
     di-carve dari train secara stratified & seeded. Transform train/val berbeda,
     jadi subset dibuat dari dua ImageFolder pada folder train yang sama.
+
+    `batch_size` & `img_size` default ke `BATCH_SIZE`/`IMG_SIZE` (config); keduanya
+    bisa ditimpa dari CLI `train.py --batch-size/--img-size` tanpa menyentuh config.
     """
-    train_tf, val_tf = build_transforms()
+    train_tf, val_tf = build_transforms(img_size)
     g = torch.Generator().manual_seed(SEED)
     pin = (device.type == "cuda")
 
@@ -117,10 +124,10 @@ def build_loaders(data_root, device):
     else:
         kw = dict(shuffle=True, generator=g)
 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, drop_last=True,
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, drop_last=True,
                               worker_init_fn=seed_worker, num_workers=NUM_WORKERS,
                               pin_memory=pin, persistent_workers=NUM_WORKERS > 0, **kw)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False,
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False,
                             num_workers=NUM_WORKERS, pin_memory=pin,
                             persistent_workers=NUM_WORKERS > 0)
     return train_loader, val_loader, train_dataset, val_dataset
@@ -145,7 +152,7 @@ def _stratified_subset_indices(targets, per_class, seed=SEED):
     return sorted(idx_terpilih)
 
 
-def build_test_loader(data_root, device, per_class=None):
+def build_test_loader(data_root, device, per_class=None, batch_size=BATCH_SIZE, img_size=IMG_SIZE):
     """Bangun test_loader dari <data_root>/test (ImageFolder). None bila folder tak ada.
 
     Dipakai untuk evaluasi akhir & confusion matrix pada data uji yang benar-benar
@@ -153,13 +160,14 @@ def build_test_loader(data_root, device, per_class=None):
 
     Bila `per_class` diisi (mis. 300), test set disaring jadi subset stratified
     `per_class` citra per kelas (seeded `SEED`), seimbang antar-kelas. Default `None`
-    memakai seluruh test set apa adanya.
+    memakai seluruh test set apa adanya. `batch_size` & `img_size` default ke
+    `BATCH_SIZE`/`IMG_SIZE` (config) — selaraskan dengan nilai saat training.
     """
     test_dir = data_root / "test"
     if not test_dir.is_dir():
         print(f"[data] folder test/ tidak ada di {test_dir} -> lewati evaluasi test")
         return None, None
-    _, val_tf = build_transforms()
+    _, val_tf = build_transforms(img_size)
     test_dataset = ImageFolder(root=str(test_dir), transform=val_tf)
 
     if per_class is not None:
@@ -170,7 +178,7 @@ def build_test_loader(data_root, device, per_class=None):
         print(f"[data] subset test stratified: {len(idx)} citra "
               f"({per_class}/kelas, seed={SEED})")
 
-    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False,
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False,
                              num_workers=NUM_WORKERS, pin_memory=(device.type == "cuda"),
                              persistent_workers=NUM_WORKERS > 0)
     return test_loader, test_dataset

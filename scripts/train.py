@@ -36,6 +36,12 @@ def parse_args():
     p.add_argument("--data-root", type=Path, default=C.DATA_ROOT)
     p.add_argument("--epochs", type=int, default=C.EPOCHS)
     p.add_argument("--run-name", default=C.RUN_NAME)
+    p.add_argument("--batch-size", type=int, default=C.BATCH_SIZE,
+                   help=f"Ukuran batch train/val/test (default {C.BATCH_SIZE} dari config). "
+                        "Kecilkan bila VRAM kurang (mis. 16/8); besarkan bila GPU lapang.")
+    p.add_argument("--img-size", type=int, default=C.IMG_SIZE,
+                   help=f"Sisi citra persegi H=W piksel (default {C.IMG_SIZE} dari config). "
+                        "Menata ulang Resize/Pad/CenterCrop; selaraskan saat evaluasi.")
     p.add_argument("--seed", type=int, default=C.SEED,
                    help="Seed acak. Untuk uji beberapa seed, pasangkan dengan "
                         "--run-name berbeda agar checkpoint/log tidak saling menimpa.")
@@ -52,7 +58,8 @@ def main():
     set_seed(args.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() and not C.DEBUG else "cpu")
-    print(f"Device: {device} | DEBUG: {C.DEBUG} | SEED: {args.seed}")
+    print(f"Device: {device} | DEBUG: {C.DEBUG} | SEED: {args.seed} | "
+          f"batch {args.batch_size} | img {args.img_size}")
 
     if not args.data_root.exists():
         raise SystemExit(
@@ -66,7 +73,8 @@ def main():
     ckpt_path = C.CKPT_DIR / f"{args.run_name}{C.VERSION}.pth"
     last_path = C.CKPT_DIR / f"{args.run_name}{C.VERSION}_last.pth"
 
-    train_loader, val_loader, train_ds, val_ds = build_loaders(args.data_root, device)
+    train_loader, val_loader, train_ds, val_ds = build_loaders(
+        args.data_root, device, batch_size=args.batch_size, img_size=args.img_size)
     classes = getattr(val_ds, "classes", C.CLASS_NAMES)
     print(f"Kelas ({len(classes)}): {classes}")
 
@@ -174,7 +182,8 @@ def main():
             print(f"[eval] muat model terbaik {ckpt_path.name} (f1={best_f1:.4f})")
 
         # Test penuh (held-out <data_root>/test, 9000 citra). None bila tak ada.
-        test_loader, _ = build_test_loader(args.data_root, device)
+        test_loader, _ = build_test_loader(
+            args.data_root, device, batch_size=args.batch_size, img_size=args.img_size)
 
         # Laporan lengkap (CSV + CM val/test + kurva loss & akurasi terpisah +
         # Grad-CAM benar/salah + Markdown) ke SATU folder pelatihan `run_dir`.
@@ -196,7 +205,9 @@ def main():
         # (opsional) Confusion matrix subset test stratified N/kelas — pembanding.
         if args.test_per_class is not None and test_loader is not None:
             sub_loader, _ = build_test_loader(args.data_root, device,
-                                              per_class=args.test_per_class)
+                                              per_class=args.test_per_class,
+                                              batch_size=args.batch_size,
+                                              img_size=args.img_size)
             if sub_loader is not None:
                 print(f"[eval] confusion matrix — test subset ({args.test_per_class}/kelas)")
                 plot_confusion_matrix(

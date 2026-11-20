@@ -89,15 +89,37 @@ Dengan argumen kustom:
 python scripts/train.py --data-root data/processed --epochs 80 --run-name cloud
 ```
 
-| Argumen                    | Default              | Keterangan                                                            |
-| -------------------------- | -------------------- | --------------------------------------------------------------------- |
-| `--data-root`              | `data/processed`     | Root dataset ImageFolder (`train/val/test`).                          |
-| `--epochs`                 | `80` (dari `PHASES`) | Jumlah epoch total.                                                   |
-| `--run-name`               | `cloud`              | Nama run (dipakai untuk checkpoint & folder TensorBoard).             |
-| `--resume` / `--no-resume` | resume **aktif**     | Lanjut dari `_last.pth` bila ada; `--no-resume` untuk mulai dari nol. |
+Semua argumen di-parse oleh `parse_args()` di [`scripts/train.py`](scripts/train.py)
+dan default-nya ditarik dari [`config.py`](src/clouddensenet/config.py) — jadi tanpa
+flag apa pun, training memakai nilai config. Flag hanya **menimpa sementara** untuk
+run itu (tidak mengubah config di disk).
 
-Saat mulai, script mencetak device, daftar kelas, jadwal tahap (`PHASES`), dan
-jumlah parameter trainable per tahap.
+| Argumen            | Tipe / aksi        | Default (sumber config)      | Keterangan                                                                                                                              |
+| ------------------ | ------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `--data-root`      | `Path`             | `data/processed` (`DATA_ROOT`) | Root dataset ImageFolder (`train/` + `val/` + `test/`). Bila `val/` tak ada, divalidasi di-carve dari `train/` (stratified, seeded).  |
+| `--epochs`         | `int`              | `80` (`EPOCHS`, dari `PHASES`) | Jumlah epoch total. Jadwal pembekuan tetap mengikuti `PHASES`; nilai < total fase berarti sebagian fase tidak tercapai.               |
+| `--run-name`       | `str`              | `cloud` (`RUN_NAME`)         | Prefiks checkpoint, folder hasil, & subfolder TensorBoard. Pakai nama unik tiap percobaan agar tidak saling menimpa (lihat §7.1).      |
+| `--batch-size`     | `int`              | `32` (`BATCH_SIZE`)          | **Jumlah citra per batch** train/val/test. Kecilkan bila VRAM kurang (mis. `16`/`8`); besarkan bila GPU lapang. Saat `DEBUG=True` config memaksa `2`. |
+| `--img-size`       | `int`              | `224` (`IMG_SIZE`)           | **Sisi citra persegi H=W (piksel)**. Menata ulang `Resize`/`Pad`/`CenterCrop` di `build_transforms`. Evaluasi/laporan harus memakai ukuran yang sama dengan saat training. |
+| `--seed`           | `int`              | `42` (`SEED`)                | Seed acak (random/numpy/torch). Untuk uji beberapa seed, pasangkan dengan `--run-name` berbeda agar checkpoint/log tidak saling menimpa. |
+| `--resume` / `--no-resume` | flag (`store_true`/`store_false`) | resume **aktif** | Lanjut dari `<run>_Versi01_last.pth` bila ada; `--no-resume` memaksa mulai dari nol (epoch 1).                                         |
+| `--test-per-class` | `int`              | `None` (nonaktif)            | Selain evaluasi test penuh, tambahkan confusion matrix subset stratified N citra/kelas (mis. `300`) sebagai pembanding seimbang antar-kelas. |
+
+Contoh menimpa ukuran citra & batch dari CLI (misal GPU terbatas):
+
+```bash
+python scripts/train.py --batch-size 16 --img-size 192 --run-name cloud_b16_s192
+```
+
+Saat mulai, script mencetak device, **batch & img-size efektif**, daftar kelas,
+jadwal tahap (`PHASES`), dan jumlah parameter trainable per tahap.
+
+> **Catatan konsistensi.** `--img-size` & `--batch-size` hanya menimpa run saat ini.
+> `scripts/evaluate.py` dan `scripts/report.py` belum punya flag ini (memakai
+> `IMG_SIZE`/`BATCH_SIZE` dari config). Jadi bila melatih dengan `--img-size` non-default,
+> sesuaikan juga `IMG_SIZE` di `config.py` sebelum evaluasi/laporan agar ukuran input
+> cocok dengan bobot checkpoint. `--batch-size` tidak mengubah hasil (hanya throughput/VRAM),
+> jadi aman berbeda antara training dan evaluasi.
 
 > **Dataset mana yang dipakai? (agar tidak tersesat)** Secara default training
 > memakai **`data/processed`** — dataset GCD utama (`train/` + `val/` + `test/`).
