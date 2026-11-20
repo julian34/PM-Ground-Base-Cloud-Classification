@@ -45,9 +45,22 @@ def test_forward_vit_branch():
     assert logits.shape == (2, C.NUM_CLASSES), logits.shape
 
 
+def test_forward_ablation_baseline():
+    # Baseline polos: semua modifikasi mati. Output tetap (N, 7) & SE benar-benar Identity.
+    import torch.nn as nn
+    model = CloudDenseNet(use_se=False, use_scconv=False, use_vit=False).eval()
+    assert isinstance(model.se1, nn.Identity), "jebakan: SE block-level harus Identity saat use_se=False"
+    assert isinstance(model.se4, nn.Identity)
+    x = torch.randn(2, 3, C.IMG_SIZE, C.IMG_SIZE)
+    with torch.no_grad():
+        logits = model(x)                     # lam=None -> SpatialAttnBR = SpatialAttn biasa
+    assert logits.shape == (2, C.NUM_CLASSES), logits.shape
+
+
 if __name__ == "__main__":
     test_forward_shape()
     test_return_all_keys()
+    test_forward_ablation_baseline()
     m = CloudDenseNet()
     total = sum(p.numel() for p in m.parameters())
     print(f"[OK] forward pass sukses | total parameter: {total:,}")

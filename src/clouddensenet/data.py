@@ -15,9 +15,10 @@ from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 
+from . import config as C
 from .config import (
     BATCH_SIZE, IMBALANCE, IMG_SIZE, MEAN, NORM_MODE, NUM_CLASSES, NUM_WORKERS,
-    SAMPLES_PER_EPOCH, SEED, STD, STRONG_AUG, USE_BR, VAL_SPLIT,
+    SAMPLES_PER_EPOCH, SEED, STD, STRONG_AUG, VAL_SPLIT,
 )
 from .spectral import lambda_relatif
 
@@ -188,7 +189,7 @@ def build_test_loader(data_root, device, per_class=None, batch_size=BATCH_SIZE, 
 def siapkan_batch(x01, device):
     """x01 [B,3,H,W] di [0,1] -> (x ternormalisasi, λ [B,1,H,W] atau None)."""
     x01 = x01.to(device, non_blocking=True).float()
-    lam = lambda_relatif(x01).unsqueeze(1) if USE_BR else None
+    lam = lambda_relatif(x01).unsqueeze(1) if C.USE_BR else None   # C.USE_BR: dinamis utk ablasi --no-br
     if NORM_MODE == "imagenet":
         mean_t, std_t = _norm_stats(device)
         x = (x01 - mean_t) / std_t

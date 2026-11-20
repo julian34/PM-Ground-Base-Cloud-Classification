@@ -28,7 +28,9 @@ def bekukan_imagenet(model, latih_baru=True, verbose=True):
             p.requires_grad = False
         else:   # SE, SA, log_q, log_tau. pq dilewati: pembacanya (h.2) beku = 0
             p.requires_grad = latih_baru and ".pq." not in n
-    model.bn_beku = not USE_SCCONV   # SCConv mengubah distribusi -> BN harus adaptasi
+    # SCConv mengubah distribusi -> BN harus adaptasi. Baca flag dari instance model
+    # (di-set konstruktor) agar ablasi --no-scconv konsisten, bukan dari global config.
+    model.bn_beku = not getattr(model, "use_scconv", USE_SCCONV)
     model.bn_buka = ()
     if verbose:
         _lapor(model, "Beku ImageNet")

@@ -15,8 +15,8 @@ from .blocks import (
     TopBlock, TransitionLayer1, TransitionLayer2, TransitionLayer3,
 )
 from .config import (
-    CLOUDVIT_DROP, CLOUDVIT_GDEPTH, IMG_SIZE, ND_CH, NUM_CLASSES, USE_SE, USE_VIT,
-    VIT_ARCH, VIT_DIM, VIT_INPUT, VIT_PATCH, VIT_PATCH_RAW,
+    CLOUDVIT_DROP, CLOUDVIT_GDEPTH, IMG_SIZE, ND_CH, NUM_CLASSES, USE_SCCONV, USE_SE,
+    USE_VIT, VIT_ARCH, VIT_DIM, VIT_INPUT, VIT_PATCH, VIT_PATCH_RAW,
 )
 from .cloudvit_branch import CloudViTBranch
 from .losses import init_new_layers
@@ -25,9 +25,11 @@ from .vit_branch import ViTBranch
 
 class CloudDenseNet(nn.Module):
     def __init__(self, growth_rate=32, n_cls=NUM_CLASSES, top_hidden=None, use_vit=USE_VIT,
-                 vit_input=VIT_INPUT, vit_arch=VIT_ARCH):
+                 vit_input=VIT_INPUT, vit_arch=VIT_ARCH, use_se=USE_SE, use_scconv=USE_SCCONV):
         super().__init__()
-        kw = dict(growth_rate=growth_rate, nd=ND_CH, use_se=USE_SE)
+        # Simpan flag di instance -> dibaca finetune (bn_beku) & untuk introspeksi/ablasi.
+        self.use_se, self.use_scconv = use_se, use_scconv
+        kw = dict(growth_rate=growth_rate, nd=ND_CH, use_se=use_se, use_scconv=use_scconv)
 
         # ===== Backbone =====
         # Stem: 3 -> 64, 224 -> 56 (setelah conv7x7 s2 + maxpool)
@@ -38,22 +40,26 @@ class CloudDenseNet(nn.Module):
 
         # Block 1: 64 -> 256 | Trans 1: -> 128
         self.block1 = DenseBlock1(num_layers=6, in_channels=64, **kw)
-        self.se1, self.sa = SEBlock(256), SpatialAttnBR()
+        self.se1 = SEBlock(256) if use_se else nn.Identity()      # gated: baseline tanpa SE
+        self.sa = SpatialAttnBR()
         self.trans1 = TransitionLayer1(256, 128)
 
         # Block 2: 128 -> 512 | Trans 2: -> 256
         self.block2 = DenseBlock2(num_layers=12, in_channels=128, **kw)
-        self.se2, self.sa2 = SEBlock(512), SpatialAttnBR()
+        self.se2 = SEBlock(512) if use_se else nn.Identity()
+        self.sa2 = SpatialAttnBR()
         self.trans2 = TransitionLayer2(512, 256)
 
         # Block 3: 256 -> 1024 | Trans 3: -> 512
         self.block3 = DenseBlock3(num_layers=24, in_channels=256, **kw)
-        self.se3, self.sa3 = SEBlock(1024), SpatialAttnBR()
+        self.se3 = SEBlock(1024) if use_se else nn.Identity()
+        self.sa3 = SpatialAttnBR()
         self.trans3 = TransitionLayer3(1024, 512)
 
         # Block 4: 512 -> 1024 | BN akhir
         self.block4 = DenseBlock4(num_layers=16, in_channels=512, **kw)
-        self.se4, self.sa4 = SEBlock(1024), SpatialAttnBR()
+        self.se4 = SEBlock(1024) if use_se else nn.Identity()
+        self.sa4 = SpatialAttnBR()
         self.norm5 = nn.BatchNorm2d(1024)
 
         # ===== Cabang B (opsional) =====

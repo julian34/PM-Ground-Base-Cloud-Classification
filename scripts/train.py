@@ -50,6 +50,20 @@ def parse_args():
     p.add_argument("--test-per-class", type=int, default=None,
                    help="Selain evaluasi test penuh, evaluasi juga subset stratified "
                         "N citra per kelas (mis. 300) untuk pembanding. Default: hanya penuh.")
+
+    # --- Toggle komponen arsitektur untuk ABLASI (default = nilai config.py) ---
+    # Pakai --no-xxx untuk mematikan. Contoh baseline polos:
+    #   python scripts/train.py --run-name abl_base --no-se --no-scconv --no-vit --no-br
+    # Pasangkan selalu dengan --run-name unik agar checkpoint/log tak saling timpa.
+    p.add_argument("--se", action=argparse.BooleanOptionalAction, default=C.USE_SE,
+                   help="SEBlock (atensi channel). --no-se -> semua SE jadi Identity.")
+    p.add_argument("--scconv", action=argparse.BooleanOptionalAction, default=C.USE_SCCONV,
+                   help="SCConv. --no-scconv -> conv 3x3 standar (Conv2d).")
+    p.add_argument("--vit", action=argparse.BooleanOptionalAction, default=C.USE_VIT,
+                   help="Cabang CloudViT + fusi. --no-vit -> hanya backbone DenseNet.")
+    p.add_argument("--br", action=argparse.BooleanOptionalAction, default=C.USE_BR,
+                   help="Kanal lambda B/R di SpatialAttnBR (kebaruan sadar-fisika). "
+                        "--no-br -> lam=None, SpatialAttnBR merosot jadi SpatialAttn biasa.")
     return p.parse_args()
 
 
@@ -78,7 +92,12 @@ def main():
     classes = getattr(val_ds, "classes", C.CLASS_NAMES)
     print(f"Kelas ({len(classes)}): {classes}")
 
-    model = CloudDenseNet().to(device)
+    # Terapkan toggle ablasi. SE/SCConv/ViT di-thread lewat konstruktor (nilai config
+    # terikat saat import tak bisa cuma ditimpa). USE_BR disinkronkan ke modul config
+    # agar siapkan_batch (data.py) & laporan membacanya saat runtime.
+    C.USE_SE, C.USE_SCCONV, C.USE_VIT, C.USE_BR = args.se, args.scconv, args.vit, args.br
+    print(f"Ablasi -> SE:{args.se} | SCConv:{args.scconv} | CloudViT:{args.vit} | BR(λ):{args.br}")
+    model = CloudDenseNet(use_se=args.se, use_scconv=args.scconv, use_vit=args.vit).to(device)
     model = muat_imagenet(model)
     model = nolkan_input_nd(model)
 

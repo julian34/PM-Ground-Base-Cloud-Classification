@@ -13,7 +13,8 @@ from .conv import SCConv
 class DenseLayer(nn.Module):
     """BN-ReLU-Conv1x1(4k)-BN-ReLU -> SE -> SCConv3x3(k). Opsional: ND (nd channel)."""
 
-    def __init__(self, in_channels, growth_rate=32, nd=0, use_se=False, eps=1e-3):
+    def __init__(self, in_channels, growth_rate=32, nd=0, use_se=False,
+                 use_scconv=USE_SCCONV, eps=1e-3):
         super().__init__()
         mid = 4 * growth_rate  # 128
         self.h = nn.Sequential(
@@ -21,7 +22,7 @@ class DenseLayer(nn.Module):
             nn.Conv2d(in_channels, mid, 1, bias=False),
             nn.BatchNorm2d(mid), nn.ReLU(inplace=True))
         self.se = SEBlock(mid) if use_se else nn.Identity()           # SE pada bottleneck (128)
-        self.conv = (SCConv(mid, growth_rate - nd, 3, padding=1) if USE_SCCONV
+        self.conv = (SCConv(mid, growth_rate - nd, 3, padding=1) if use_scconv
                      else nn.Conv2d(mid, growth_rate - nd, 3, padding=1, bias=False))
         self.pq = nn.Conv2d(mid, 2 * nd, 3, padding=1, bias=False) if nd else None
         self.eps = eps
@@ -39,10 +40,12 @@ class DenseLayer(nn.Module):
 class DenseBlock1(nn.Module):
     """Wadah untuk menyusun N DenseLayer secara berurutan (concat dense)."""
 
-    def __init__(self, num_layers=6, in_channels=64, growth_rate=32, nd=0, use_se=False):
+    def __init__(self, num_layers=6, in_channels=64, growth_rate=32, nd=0, use_se=False,
+                 use_scconv=USE_SCCONV):
         super().__init__()
         self.layers = nn.ModuleList([
-            DenseLayer(in_channels + i * growth_rate, growth_rate, nd=nd, use_se=use_se)
+            DenseLayer(in_channels + i * growth_rate, growth_rate, nd=nd, use_se=use_se,
+                       use_scconv=use_scconv)
             for i in range(num_layers)])
 
     def forward(self, x):
@@ -55,22 +58,25 @@ class DenseBlock1(nn.Module):
 class DenseBlock2(DenseBlock1):
     """12 dense layer: 128 -> 128 + 12·32 = 512 channel, spasial tetap 64×64."""
 
-    def __init__(self, num_layers=12, in_channels=128, growth_rate=32, nd=0, use_se=False):
-        super().__init__(num_layers, in_channels, growth_rate, nd, use_se)
+    def __init__(self, num_layers=12, in_channels=128, growth_rate=32, nd=0, use_se=False,
+                 use_scconv=USE_SCCONV):
+        super().__init__(num_layers, in_channels, growth_rate, nd, use_se, use_scconv)
 
 
 class DenseBlock3(DenseBlock1):
     """24 dense layer: 256 -> 256 + 24·32 = 1024 channel, spasial tetap 32×32."""
 
-    def __init__(self, num_layers=24, in_channels=256, growth_rate=32, nd=0, use_se=False):
-        super().__init__(num_layers, in_channels, growth_rate, nd, use_se)
+    def __init__(self, num_layers=24, in_channels=256, growth_rate=32, nd=0, use_se=False,
+                 use_scconv=USE_SCCONV):
+        super().__init__(num_layers, in_channels, growth_rate, nd, use_se, use_scconv)
 
 
 class DenseBlock4(DenseBlock1):
     """16 dense layer: 512 -> 512 + 16·32 = 1024 channel, spasial tetap 16×16."""
 
-    def __init__(self, num_layers=16, in_channels=512, growth_rate=32, nd=0, use_se=False):
-        super().__init__(num_layers, in_channels, growth_rate, nd, use_se)
+    def __init__(self, num_layers=16, in_channels=512, growth_rate=32, nd=0, use_se=False,
+                 use_scconv=USE_SCCONV):
+        super().__init__(num_layers, in_channels, growth_rate, nd, use_se, use_scconv)
 
 
 class TransitionLayer1(nn.Module):
