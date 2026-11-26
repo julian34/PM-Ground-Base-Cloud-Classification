@@ -114,12 +114,13 @@ python scripts/train.py --batch-size 16 --img-size 192 --run-name cloud_b16_s192
 Saat mulai, script mencetak device, **batch & img-size efektif**, daftar kelas,
 jadwal tahap (`PHASES`), dan jumlah parameter trainable per tahap.
 
-> **Catatan konsistensi.** `--img-size` & `--batch-size` hanya menimpa run saat ini.
-> `scripts/evaluate.py` dan `scripts/report.py` belum punya flag ini (memakai
-> `IMG_SIZE`/`BATCH_SIZE` dari config). Jadi bila melatih dengan `--img-size` non-default,
-> sesuaikan juga `IMG_SIZE` di `config.py` sebelum evaluasi/laporan agar ukuran input
-> cocok dengan bobot checkpoint. `--batch-size` tidak mengubah hasil (hanya throughput/VRAM),
-> jadi aman berbeda antara training dan evaluasi.
+> **Catatan konsistensi.** `--img-size` & `--batch-size` hanya menimpa run saat ini
+> (tidak mengubah `config.py`). `scripts/evaluate.py` dan `scripts/report.py` **juga
+> punya kedua flag ini** (lihat §8.2 & §9), jadi tak perlu lagi mengubah config untuk
+> evaluasi. **Penting:** `--img-size` saat evaluasi/laporan **wajib sama** dengan nilai
+> saat checkpoint dilatih — ukuran input memengaruhi bentuk tensor yang masuk Top Block.
+> `--batch-size` tidak mengubah hasil (hanya throughput/VRAM), jadi aman berbeda antara
+> training dan evaluasi.
 
 > **Dataset mana yang dipakai? (agar tidak tersesat)** Secara default training
 > memakai **`data/processed`** — dataset GCD utama (`train/` + `val/` + `test/`).
@@ -281,6 +282,8 @@ python scripts/report.py --dataset-b --checkpoint "artifacts/checkpoints/dataset
 | `--data-root`          | `data/processed`                            | Root dataset ImageFolder (`val/` & `test/`). Eksplisit mengalahkan `--dataset-b`. |
 | `--dataset-b`          | nonaktif                                    | Arahkan `--data-root` ke `data/processed/dataset_b` bila `--data-root` tak diisi. |
 | `--run-name`           | `cloud`                                     | Prefiks nama berkas keluaran.                                                    |
+| `--batch-size`         | `32` (`BATCH_SIZE`)                         | Ukuran batch inferensi val/test. Hanya memengaruhi throughput/VRAM, bukan hasil. |
+| `--img-size`           | `224` (`IMG_SIZE`)                          | Sisi citra persegi H=W piksel. **Wajib sama** dengan nilai saat checkpoint dilatih. |
 | `--out-dir`            | `artifacts/results/<run>_laporan_<tanggal>` | Folder keluaran laporan.                                                         |
 | `--history-checkpoint` | sibling `..._last.pth`                      | Sumber `history` untuk kurva loss/akurasi.                                       |
 | `--log-csv`            | auto                                        | CSV log per-epoch (fallback kurva & waktu bila `history` tak ada).              |
@@ -321,6 +324,8 @@ python scripts/evaluate.py --dataset-b --checkpoint "artifacts/checkpoints/datas
 | `--data-root`      | `data/processed`                          | Root dataset ImageFolder (dipakai folder `test/`). Eksplisit mengalahkan `--dataset-b`.           |
 | `--dataset-b`      | nonaktif                                  | Arahkan `--data-root` ke `data/processed/dataset_b` (`config.DATASET_B_ROOT`) bila `--data-root` tak diisi. |
 | `--run-name`       | `cloud`                                   | Prefiks nama berkas keluaran PNG.                                                                 |
+| `--batch-size`     | `32` (`BATCH_SIZE`)                       | Ukuran batch inferensi test. Hanya memengaruhi throughput/VRAM, bukan hasil.                      |
+| `--img-size`       | `224` (`IMG_SIZE`)                        | Sisi citra persegi H=W piksel. **Wajib sama** dengan nilai saat checkpoint dilatih.               |
 | `--test-per-class` | `None`                                    | Selain test penuh, evaluasi juga subset stratified N citra/kelas (mis. `300`) sebagai pembanding. |
 | `--show`           | nonaktif                                  | Tampilkan jendela plot; default hanya menyimpan PNG (`Agg`).                                      |
 

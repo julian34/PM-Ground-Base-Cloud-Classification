@@ -54,6 +54,12 @@ def parse_args():
     p.add_argument("--log-csv", type=Path, default=None,
                    help="CSV log per-epoch untuk kurva/waktu (fallback bila history checkpoint tak ada).")
     p.add_argument("--run-name", default=C.RUN_NAME)
+    p.add_argument("--batch-size", type=int, default=C.BATCH_SIZE,
+                   help=f"Ukuran batch inferensi val/test (default {C.BATCH_SIZE} dari config). "
+                        "Hanya memengaruhi throughput/VRAM, bukan hasil.")
+    p.add_argument("--img-size", type=int, default=C.IMG_SIZE,
+                   help=f"Sisi citra persegi H=W piksel (default {C.IMG_SIZE} dari config). "
+                        "WAJIB sama dengan nilai saat checkpoint dilatih.")
     p.add_argument("--out-dir", type=Path, default=None,
                    help="Folder keluaran laporan (default: artifacts/results/<run>_laporan_<tanggal>).")
     p.add_argument("--n-gradcam", type=int, default=4,
@@ -113,7 +119,8 @@ def main():
         print("[report] --data-root eksplisit diberikan; --dataset-b diabaikan.")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Dataset: {args.data_root} | Device: {device} | SEED: {C.SEED}")
+    print(f"Dataset: {args.data_root} | Device: {device} | SEED: {C.SEED} | "
+          f"batch {args.batch_size} | img {args.img_size}")
 
     if not args.checkpoint.exists():
         raise SystemExit(f"Checkpoint tidak ditemukan: {args.checkpoint}")
@@ -127,11 +134,13 @@ def main():
           + (f"(f1={f1:.4f})" if f1 is not None else f"(top_hidden={info.get('top_hidden')})"))
 
     # Loader: test penuh + (opsional) val dari train/val.
-    test_loader, test_ds = build_test_loader(args.data_root, device)
+    test_loader, test_ds = build_test_loader(
+        args.data_root, device, batch_size=args.batch_size, img_size=args.img_size)
     classes = getattr(test_ds, "classes", C.CLASS_NAMES) if test_ds is not None else C.CLASS_NAMES
     val_loader = None
     if not args.no_val:
-        _, val_loader, _, val_ds = build_loaders(args.data_root, device)
+        _, val_loader, _, val_ds = build_loaders(
+            args.data_root, device, batch_size=args.batch_size, img_size=args.img_size)
         classes = getattr(val_ds, "classes", classes)
 
     # --- History untuk kurva (checkpoint _last.pth lalu fallback CSV) -------- #

@@ -46,6 +46,12 @@ def parse_args():
     p.add_argument("--checkpoint", type=Path,
                    default=C.CKPT_DIR / f"{C.RUN_NAME}{C.VERSION}.pth")
     p.add_argument("--run-name", default=C.RUN_NAME)
+    p.add_argument("--batch-size", type=int, default=C.BATCH_SIZE,
+                   help=f"Ukuran batch inferensi test (default {C.BATCH_SIZE} dari config). "
+                        "Hanya memengaruhi throughput/VRAM, bukan hasil.")
+    p.add_argument("--img-size", type=int, default=C.IMG_SIZE,
+                   help=f"Sisi citra persegi H=W piksel (default {C.IMG_SIZE} dari config). "
+                        "WAJIB sama dengan nilai saat checkpoint dilatih.")
     p.add_argument("--test-per-class", type=int, default=None,
                    help="Selain test penuh, evaluasi juga subset stratified N citra "
                         "per kelas (mis. 300) untuk pembanding. Default: hanya penuh.")
@@ -69,7 +75,7 @@ def main():
     print(f"Dataset: {args.data_root}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device} | SEED: {C.SEED}")
+    print(f"Device: {device} | SEED: {C.SEED} | batch {args.batch_size} | img {args.img_size}")
 
     if not args.checkpoint.exists():
         raise SystemExit(f"Checkpoint tidak ditemukan: {args.checkpoint}")
@@ -87,7 +93,8 @@ def main():
     C.RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
     # 1. Confusion matrix pada data TEST penuh (held-out <data_root>/test).
-    test_loader, test_ds = build_test_loader(args.data_root, device)
+    test_loader, test_ds = build_test_loader(
+        args.data_root, device, batch_size=args.batch_size, img_size=args.img_size)
     if test_loader is None:
         raise SystemExit(f"folder test/ tidak ada di {args.data_root}")
     classes = getattr(test_ds, "classes", C.CLASS_NAMES)
@@ -98,7 +105,9 @@ def main():
     # 2. (opsional) Subset test stratified N/kelas — pembanding, bukan pengganti.
     if args.test_per_class is not None:
         sub_loader, _ = build_test_loader(args.data_root, device,
-                                          per_class=args.test_per_class)
+                                          per_class=args.test_per_class,
+                                          batch_size=args.batch_size,
+                                          img_size=args.img_size)
         print(f"[eval] confusion matrix — test subset ({args.test_per_class}/kelas)")
         plot_confusion_matrix(
             model, sub_loader, device, classes=classes,
