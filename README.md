@@ -217,6 +217,15 @@ python scripts/train.py --data-root data/processed --epochs 80 --run-name cloud
 - Checkpoint terakhir (bisa di-resume) → `..._last.pth`
 - Kurva & confusion matrix → `artifacts/results/`
 
+Beberapa seed sekaligus (berurutan; run-name otomatis `<run>_s<seed>`, argumen lain
+diteruskan ke `train.py`), lalu ringkasan mean ± std ke
+`artifacts/results/<run>_seeds_ringkasan.csv`:
+
+```bash
+python scripts/run_seeds.py --seeds 42 123 2024 --run-name cloud --epochs 80
+python scripts/run_seeds.py --seeds 42 123 2024 --run-name cloud --hanya-ringkas  # ringkas ulang saja
+```
+
 ### Pemantauan dengan TensorBoard
 
 TensorBoard **terpasang & aktif otomatis** saat training berjalan — tak perlu
