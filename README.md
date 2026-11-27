@@ -226,6 +226,36 @@ python scripts/run_seeds.py --seeds 42 123 2024 --run-name cloud --epochs 80
 python scripts/run_seeds.py --seeds 42 123 2024 --run-name cloud --hanya-ringkas  # ringkas ulang saja
 ```
 
+### Cabang ViT: CloudViT dari awal vs MobileViTv2 pretrained
+
+Secara default cabang ViT memakai **CloudViT yang dilatih dari awal**. Dengan flag
+`--vit-pretrained`, cabang itu diganti **MobileViTv2 berbobot ImageNet** (lewat `timm`,
+model `config.MOBILEVIT_NAME = "mobilevitv2_100.cvnets_in1k"`, keluaran 512-dim). Model
+ini dibekukan mengikuti jadwal fine-tuning bertahap `PHASES`.
+
+```bash
+python scripts/train.py --run-name fusi_cloudvit                                    # default: CloudViT dari awal
+python scripts/train.py --vit-pretrained --run-name fusi_mvit2                      # MobileViTv2, ikut jadwal
+python scripts/train.py --vit-pretrained --vit-ft beku --run-name fusi_mvit2_beku   # MobileViTv2, beku total
+```
+
+| Fase `PHASES` | `--vit-ft jadwal` (default) | `--vit-ft beku` |
+|---|---|---|
+| frozen (1–2) | seluruh `vit.*` beku | beku |
+| partial (3–5) | stage terakhir dibuka (`VIT_PRETRAINED_BLOK_FT`) | beku |
+| full (6–7) | seluruh cabang dibuka | beku |
+
+Catatan:
+- Butuh paket `timm` (sudah ada di `requirements.txt`). Run pertama perlu internet untuk
+  mengunduh bobot. Setelah itu bobot diambil dari cache Hugging Face.
+- Normalisasi ditangani di dalam cabang: bobot MobileViTv2 memakai input [0,1] tanpa
+  mean/std, sehingga normalisasi ImageNet dari pipeline data dibalik otomatis.
+- BatchNorm MobileViTv2 yang bobotnya beku tetap dalam mode eval (running stats tidak berubah).
+- Selalu pakai `--run-name` berbeda. Checkpoint CloudViT dan MobileViTv2 tidak bisa
+  saling di-resume. `evaluate.py`/`report.py` mengenali checkpoint MobileViTv2 secara otomatis.
+- Bawaan permanen bisa diatur di `config.py`: `VIT_PRETRAINED`, `MOBILEVIT_NAME`,
+  `VIT_PRETRAINED_FT`, `VIT_PRETRAINED_BLOK_FT`.
+
 ### Pemantauan dengan TensorBoard
 
 TensorBoard **terpasang & aktif otomatis** saat training berjalan — tak perlu
