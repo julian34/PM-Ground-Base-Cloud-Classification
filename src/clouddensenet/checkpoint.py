@@ -15,6 +15,7 @@ import torch
 
 from .config import NUM_CLASSES
 from .model import CloudDenseNet
+from .mobilevit_branch import is_state_mobilevit
 from .vit_only import CloudViTOnly, is_state_vit_only
 
 _POLA_LINEAR = re.compile(r"^top\.bottleneck\.(\d+)\.weight$")
@@ -69,11 +70,16 @@ def bangun_dari_checkpoint(ckpt_path, device="cpu") -> tuple[CloudDenseNet | Clo
         # Checkpoint ablasi --arch vit-only: CloudViT + head linear, tanpa DenseNet.
         n_cls = dims[1] if dims else NUM_CLASSES
         model = CloudViTOnly(n_cls=n_cls)
-    elif dims is None:
-        model = CloudDenseNet()
     else:
-        hidden, n_cls = dims
-        model = CloudDenseNet(n_cls=n_cls, top_hidden=hidden)
+        # Checkpoint dgn cabang MobileViTv2 (kunci vit.backbone.*) -> bangun cabang itu
+        # tanpa unduh bobot ImageNet (bobotnya diambil dari checkpoint).
+        kw_vit = ({"use_vit": True, "vit_arch": "mobilevitv2", "vit_pretrained_weights": False}
+                  if is_state_mobilevit(state) else {})
+        if dims is None:
+            model = CloudDenseNet(**kw_vit)
+        else:
+            hidden, n_cls = dims
+            model = CloudDenseNet(n_cls=n_cls, top_hidden=hidden, **kw_vit)
     model = model.to(device)
 
     try:

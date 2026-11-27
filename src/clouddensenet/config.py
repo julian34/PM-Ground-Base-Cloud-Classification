@@ -80,7 +80,7 @@ BRANCH_DIMS = [256, 2048, 1024]
 #             SEPENUHNYA INDEPENDEN, baru bertemu di Top Block. Memakai
 #             VIT_PATCH_RAW (196 token @ patch 16) -> lebih mahal, lebih setia detail.
 USE_VIT = True          # True = aktifkan cabang ViT paralel
-VIT_ARCH = "cloudvit"   # "simple" (ViTBranch) | "cloudvit" (backbone CloudViT penuh)
+VIT_ARCH = "cloudvit"   # "simple" (ViTBranch) | "cloudvit" (CloudViT penuh) | "mobilevitv2" (pretrained, lihat VIT_PRETRAINED)
 VIT_INPUT = "raw"       # untuk VIT_ARCH="simple": "stem"|"raw". (cloudvit selalu raw)
 VIT_DIM = 192            # dimensi embedding/token ViT (kecil agar tak mudah overfit)
 VIT_DEPTH = 4            # jumlah lapis TransformerEncoder
@@ -93,6 +93,19 @@ VIT_DROP = 0.1           # dropout di dalam cabang ViT
 # Khusus VIT_ARCH="cloudvit" (backbone CloudViT: I/D/E/G_Module, keluaran 256-dim):
 CLOUDVIT_GDEPTH = 1      # jumlah blok transformer separable di tiap G_Module (Gbr 5: 1)
 CLOUDVIT_DROP = 0.1      # dropout di dalam G_Module (transformer + MLP)
+
+# Cabang ViT PRETRAINED (opsional): MobileViTv2 bobot ImageNet via timm.
+# Default False -> cabang ViT = CloudViT dilatih dari awal (perilaku lama).
+# True (atau `train.py --vit-pretrained`) -> VIT_ARCH dipaksa "mobilevitv2".
+VIT_PRETRAINED = False
+MOBILEVIT_NAME = "mobilevitv2_100.cvnets_in1k"   # lebar 1.0, ~4.4 jt param, keluaran 512
+# Perlakuan bobot pretrained ViT terhadap jadwal PHASES:
+#   "jadwal" -> beku di fase "frozen", stage terakhir dibuka di "partial", semua di "full"
+#               (sama seperti DenseNet ImageNet).
+#   "beku"   -> beku di SEMUA fase (ekstraktor fitur tetap, ala ALGA-DenseNet).
+VIT_PRETRAINED_FT = "jadwal"
+# Prefiks parameter cabang MobileViTv2 yang dibuka pada fase "partial".
+VIT_PRETRAINED_BLOK_FT = ("vit.backbone.stages.4.", "vit.backbone.final_conv.")
 
 # Mode ablasi "ViT saja" (train.py --arch vit-only): CloudViT -> Dropout -> Linear(7).
 # Tanpa DenseNet, tanpa bobot ImageNet (dilatih dari nol). Dropout head sengaja

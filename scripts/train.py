@@ -74,6 +74,19 @@ def parse_args():
     p.add_argument("--br", action=argparse.BooleanOptionalAction, default=C.USE_BR,
                    help="Kanal lambda B/R di SpatialAttnBR (kebaruan sadar-fisika). "
                         "--no-br -> lam=None, SpatialAttnBR merosot jadi SpatialAttn biasa.")
+
+    # --- Bobot cabang ViT ---
+    # Default (--no-vit-pretrained): cabang ViT = CloudViT, dilatih dari AWAL.
+    # --vit-pretrained: cabang ViT = MobileViTv2 bobot ImageNet (timm, config.MOBILEVIT_NAME),
+    #   dibekukan mengikuti jadwal PHASES (lihat --vit-ft). Contoh:
+    #   python scripts/train.py --vit-pretrained --run-name fusi_mvit2
+    p.add_argument("--vit-pretrained", action=argparse.BooleanOptionalAction,
+                   default=C.VIT_PRETRAINED,
+                   help="Pakai MobileViTv2 pretrained ImageNet sebagai cabang ViT "
+                        "(default: CloudViT dilatih dari awal).")
+    p.add_argument("--vit-ft", choices=("jadwal", "beku"), default=C.VIT_PRETRAINED_FT,
+                   help="Khusus --vit-pretrained. 'jadwal' = beku di fase frozen, stage "
+                        "terakhir dibuka di partial, semua di full; 'beku' = beku di semua fase.")
     return p.parse_args()
 
 
@@ -116,8 +129,16 @@ def main():
         C.USE_SE, C.USE_SCCONV, C.USE_VIT, C.USE_BR = args.se, args.scconv, args.vit, args.br
         print(f"Ablasi -> SE:{args.se} | SCConv:{args.scconv} | CloudViT:{args.vit} | "
               f"BR(λ):{args.br}")
+        vit_arch = C.VIT_ARCH
+        if args.vit and args.vit_pretrained:
+            vit_arch = "mobilevitv2"
+            C.VIT_PRETRAINED, C.VIT_PRETRAINED_FT = True, args.vit_ft
+            print(f"Cabang ViT -> MobileViTv2 pretrained ({C.MOBILEVIT_NAME}) | "
+                  f"pembekuan: {args.vit_ft}")
+        elif args.vit:
+            print(f"Cabang ViT -> {vit_arch} (dilatih dari awal)")
         model = CloudDenseNet(use_se=args.se, use_scconv=args.scconv,
-                              use_vit=args.vit).to(device)
+                              use_vit=args.vit, vit_arch=vit_arch).to(device)
         model = muat_imagenet(model)
         model = nolkan_input_nd(model)
     n_par = sum(p.numel() for p in model.parameters())

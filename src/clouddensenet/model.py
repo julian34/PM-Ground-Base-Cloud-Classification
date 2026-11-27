@@ -15,17 +15,19 @@ from .blocks import (
     TopBlock, TransitionLayer1, TransitionLayer2, TransitionLayer3,
 )
 from .config import (
-    CLOUDVIT_DROP, CLOUDVIT_GDEPTH, IMG_SIZE, ND_CH, NUM_CLASSES, USE_SCCONV, USE_SE,
-    USE_VIT, VIT_ARCH, VIT_DIM, VIT_INPUT, VIT_PATCH, VIT_PATCH_RAW,
+    CLOUDVIT_DROP, CLOUDVIT_GDEPTH, IMG_SIZE, MOBILEVIT_NAME, ND_CH, NUM_CLASSES, USE_SCCONV,
+    USE_SE, USE_VIT, VIT_ARCH, VIT_DIM, VIT_INPUT, VIT_PATCH, VIT_PATCH_RAW,
 )
 from .cloudvit_branch import CloudViTBranch
 from .losses import init_new_layers
+from .mobilevit_branch import MobileViTv2Branch
 from .vit_branch import ViTBranch
 
 
 class CloudDenseNet(nn.Module):
     def __init__(self, growth_rate=32, n_cls=NUM_CLASSES, top_hidden=None, use_vit=USE_VIT,
-                 vit_input=VIT_INPUT, vit_arch=VIT_ARCH, use_se=USE_SE, use_scconv=USE_SCCONV):
+                 vit_input=VIT_INPUT, vit_arch=VIT_ARCH, use_se=USE_SE, use_scconv=USE_SCCONV,
+                 vit_pretrained_weights=True):
         super().__init__()
         # Simpan flag di instance -> dibaca finetune (bn_beku) & untuk introspeksi/ablasi.
         self.use_se, self.use_scconv = use_se, use_scconv
@@ -76,6 +78,13 @@ class CloudDenseNet(nn.Module):
             self.vit = CloudViTBranch(gdepth=CLOUDVIT_GDEPTH, drop=CLOUDVIT_DROP)
             self.vit_input = "raw"                   # CloudViT selalu baca citra mentah
             extra_dim = self.vit.out_dim             # 256
+        elif use_vit and vit_arch == "mobilevitv2":
+            # MobileViTv2 pretrained ImageNet (timm). vit_pretrained_weights=False hanya
+            # untuk membangun ulang dari checkpoint proyek (bobot dari checkpoint).
+            # Pembekuannya diatur finetune.py mengikuti jadwal PHASES.
+            self.vit = MobileViTv2Branch(MOBILEVIT_NAME, pretrained=vit_pretrained_weights)
+            self.vit_input = "raw"                   # baca citra mentah, jalur independen
+            extra_dim = self.vit.out_dim             # 512 untuk mobilevitv2_100
         elif use_vit:                                # vit_arch == "simple"
             self.vit_input = vit_input
             if vit_input == "raw":

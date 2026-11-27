@@ -18,6 +18,7 @@ Pillow>=10.0
 tqdm>=4.66
 PyYAML>=6.0
 tensorboard>=2.14          # pemantauan training (auto-launch; lihat config.USE_TENSORBOARD)
+timm>=1.0                  # cabang ViT pretrained MobileViTv2 (train.py --vit-pretrained)
 
 # Web UI inferensi (model_ui) — upload gambar untuk uji model di browser.
 fastapi>=0.110
