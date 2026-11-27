@@ -44,6 +44,7 @@ Top Block (`TOP_HIDDEN=(512,128,32,16)`, dropout 0.8), **cabang CloudViT** paral
 │   ├── finetune.py           # pembekuan/unfreeze bertahap
 │   ├── vit_branch.py         # ViTBranch sederhana (VIT_ARCH="simple")
 │   ├── cloudvit_branch.py    # CloudViTBranch (default, VIT_ARCH="cloudvit")
+│   ├── vit_only.py           # CloudViTOnly — ablasi "ViT saja" (train.py --arch vit-only)
 │   ├── data.py               # transform, ImageFolder DataLoader, siapkan_batch
 │   ├── engine.py             # loop train/eval, jadwal tahap, pengaman NaN
 │   └── viz.py                # kurva training & confusion matrix

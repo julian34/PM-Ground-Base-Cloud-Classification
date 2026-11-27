@@ -89,7 +89,8 @@ def plot_gradcam(model, imgs01, x, lam, device, classes=None, y_true=None,
     imgs01 [B,3,H,W] di [0,1] (untuk tampilan), x & lam dari siapkan_batch (untuk model).
     """
     classes = classes or CLASS_NAMES
-    target_layer = target_layer or model.norm5
+    # Model tanpa norm5 (mis. CloudViTOnly) menyediakan `gradcam_target` sendiri.
+    target_layer = target_layer or getattr(model, "gradcam_target", None) or model.norm5
     gc = GradCAM(model, target_layer)
     try:
         cam, pred, logits = gc(x.to(device), None if lam is None else lam.to(device))

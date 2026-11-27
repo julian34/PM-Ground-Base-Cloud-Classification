@@ -94,6 +94,11 @@ VIT_DROP = 0.1           # dropout di dalam cabang ViT
 CLOUDVIT_GDEPTH = 1      # jumlah blok transformer separable di tiap G_Module (Gbr 5: 1)
 CLOUDVIT_DROP = 0.1      # dropout di dalam G_Module (transformer + MLP)
 
+# Mode ablasi "ViT saja" (train.py --arch vit-only): CloudViT -> Dropout -> Linear(7).
+# Tanpa DenseNet, tanpa bobot ImageNet (dilatih dari nol). Dropout head sengaja
+# lebih kecil dari TopBlock (0.8) karena head-nya cuma satu lapis linear.
+VIT_ONLY_DROPOUT = 0.2
+
 # --------------------------------------------------------------------------- #
 # Optimasi (AdamW + Focal Loss)
 # --------------------------------------------------------------------------- #

@@ -13,7 +13,9 @@ from pathlib import Path
 
 import torch
 
+from .config import NUM_CLASSES
 from .model import CloudDenseNet
+from .vit_only import CloudViTOnly, is_state_vit_only
 
 _POLA_LINEAR = re.compile(r"^top\.bottleneck\.(\d+)\.weight$")
 
@@ -48,8 +50,11 @@ def dimensi_top(state: dict) -> tuple[tuple[int, ...], int] | None:
     return hidden, int(fc.shape[0])
 
 
-def bangun_dari_checkpoint(ckpt_path, device="cpu") -> tuple[CloudDenseNet, dict]:
+def bangun_dari_checkpoint(ckpt_path, device="cpu") -> tuple[CloudDenseNet | CloudViTOnly, dict]:
     """Bangun CloudDenseNet dengan Top Block sesuai checkpoint, lalu muat bobotnya.
+
+    Checkpoint ablasi `--arch vit-only` (kunci `vit.*` tanpa backbone DenseNet)
+    dikenali otomatis dan dibangun sebagai CloudViTOnly.
 
     Melempar ValueError (dengan detail lengkap) bila bobot tetap tidak cocok,
     termasuk bila ada kunci model yang hilang dari checkpoint — agar model
@@ -60,7 +65,11 @@ def bangun_dari_checkpoint(ckpt_path, device="cpu") -> tuple[CloudDenseNet, dict
     state = ambil_state_dict(ck)
 
     dims = dimensi_top(state)
-    if dims is None:
+    if is_state_vit_only(state):
+        # Checkpoint ablasi --arch vit-only: CloudViT + head linear, tanpa DenseNet.
+        n_cls = dims[1] if dims else NUM_CLASSES
+        model = CloudViTOnly(n_cls=n_cls)
+    elif dims is None:
         model = CloudDenseNet()
     else:
         hidden, n_cls = dims

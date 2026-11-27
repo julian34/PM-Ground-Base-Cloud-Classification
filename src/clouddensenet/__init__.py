@@ -32,11 +32,12 @@ from .report import (
 )
 from .spectral import br_ratio_lambda, lambda_relatif, valid_mask
 from .vit_branch import ViTBranch
+from .vit_only import CloudViTOnly
 from .tblog import catat_epoch, hentikan_server, siapkan_tensorboard, tutup_tensorboard
 
 __all__ = [
     "config",
-    "CloudDenseNet",
+    "CloudDenseNet", "CloudViTOnly",
     "ambil_state_dict", "dimensi_top", "bangun_dari_checkpoint",
     "DenseLayer", "DenseBlock1", "DenseBlock2", "DenseBlock3", "DenseBlock4",
     "TransitionLayer1", "TransitionLayer2", "TransitionLayer3", "TopBlock",
