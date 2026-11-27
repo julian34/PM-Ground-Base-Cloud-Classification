@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from clouddensenet import config as C  # noqa: E402
 from clouddensenet import (  # noqa: E402
-    CloudDenseNet, EpochLogger, FocalLoss, apply_phase, buat_laporan_lengkap,
+    CloudDenseNet, CloudViTOnly, EpochLogger, FocalLoss, apply_phase, buat_laporan_lengkap,
     build_loaders, build_test_loader, catat_epoch, evaluate, muat_imagenet,
     nolkan_input_nd, phase_of, set_seed, siapkan_tensorboard, train_one_epoch,
     tutup_tensorboard,
@@ -50,6 +50,16 @@ def parse_args():
     p.add_argument("--test-per-class", type=int, default=None,
                    help="Selain evaluasi test penuh, evaluasi juga subset stratified "
                         "N citra per kelas (mis. 300) untuk pembanding. Default: hanya penuh.")
+
+    # --- Arsitektur keseluruhan ---
+    #   cloud    : CloudDenseNet (DenseNet + modifikasi, + CloudViT bila --vit). Default.
+    #   vit-only : CloudViT saja -> Dropout -> Linear(7). Tanpa DenseNet & tanpa
+    #              bobot ImageNet (latih dari nol). Toggle --se/--scconv/--vit/--br
+    #              diabaikan. Contoh:
+    #   python scripts/train.py --arch vit-only --run-name abl_vitOnly
+    p.add_argument("--arch", choices=("cloud", "vit-only"), default="cloud",
+                   help="'cloud' = CloudDenseNet (default); 'vit-only' = cabang CloudViT "
+                        "berdiri sendiri sebagai pengklasifikasi (ablasi).")
 
     # --- Toggle komponen arsitektur untuk ABLASI (default = nilai config.py) ---
     # Pakai --no-xxx untuk mematikan. Contoh baseline polos:
@@ -95,11 +105,23 @@ def main():
     # Terapkan toggle ablasi. SE/SCConv/ViT di-thread lewat konstruktor (nilai config
     # terikat saat import tak bisa cuma ditimpa). USE_BR disinkronkan ke modul config
     # agar siapkan_batch (data.py) & laporan membacanya saat runtime.
-    C.USE_SE, C.USE_SCCONV, C.USE_VIT, C.USE_BR = args.se, args.scconv, args.vit, args.br
-    print(f"Ablasi -> SE:{args.se} | SCConv:{args.scconv} | CloudViT:{args.vit} | BR(λ):{args.br}")
-    model = CloudDenseNet(use_se=args.se, use_scconv=args.scconv, use_vit=args.vit).to(device)
-    model = muat_imagenet(model)
-    model = nolkan_input_nd(model)
+    if args.arch == "vit-only":
+        # CloudViT berdiri sendiri: tak ada bobot ImageNet -> fase frozen/partial
+        # tak membekukan apa pun (imagenet_keys kosong); jadwal LR PHASES tetap
+        # dipakai agar sebanding dengan run fusi. λ B/R dihitung tapi diabaikan model.
+        model = CloudViTOnly().to(device)
+        print("Arsitektur -> vit-only (CloudViT + head linear, latih dari nol; "
+              "toggle --se/--scconv/--vit/--br diabaikan)")
+    else:
+        C.USE_SE, C.USE_SCCONV, C.USE_VIT, C.USE_BR = args.se, args.scconv, args.vit, args.br
+        print(f"Ablasi -> SE:{args.se} | SCConv:{args.scconv} | CloudViT:{args.vit} | "
+              f"BR(λ):{args.br}")
+        model = CloudDenseNet(use_se=args.se, use_scconv=args.scconv,
+                              use_vit=args.vit).to(device)
+        model = muat_imagenet(model)
+        model = nolkan_input_nd(model)
+    n_par = sum(p.numel() for p in model.parameters())
+    print(f"Parameter total: {n_par:,}")
 
     criterion = FocalLoss() if C.FOCAL_GAMMA > 0.0 else torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=C.LR, weight_decay=C.WEIGHT_DECAY)
