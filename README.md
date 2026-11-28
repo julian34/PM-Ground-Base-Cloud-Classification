@@ -44,6 +44,8 @@ lokal (GPU NVIDIA terdeteksi: dibangun untuk CUDA 12.4).
 │   ├── tblog.py              # TensorBoard: pasang & aktif otomatis saat training
 │   └── viz.py                # kurva training & confusion matrix
 ├── scripts/train.py          # entrypoint training
+├── scripts/visualisasi_augmentasi.py  # gambar augmentasi -> laporan/gambar/agumentasi/
+├── scripts/gradcam_perkelas.py        # Grad-CAM per kelas -> laporan/gambar/grad-map/
 ├── tests/test_forward.py     # smoke test (tanpa dataset/GPU)
 ├── configs/                  # (opsional) konfigurasi tersimpan
 ├── data/                     # dataset (lihat data/README.md) — tidak di-commit
@@ -280,6 +282,65 @@ tensorboard --logdir artifacts/runs
 Semua hyperparameter (ukuran gambar, batch, jadwal tahap, augmentasi, flag
 arsitektur) ada di **`src/clouddensenet/config.py`**. Set `DEBUG = True` untuk
 uji cepat 1 batch/epoch di CPU.
+
+## Gambar untuk laporan: augmentasi & Grad-CAM per kelas
+
+Dua skrip mandiri yang menghasilkan gambar siap pakai di laporan. Keduanya hanya
+**memakai** modul yang ada (tidak mengubah kode training) dan memakai model yang
+**sudah dilatih**.
+
+### Visualisasi augmentasi
+
+```bash
+python scripts/visualisasi_augmentasi.py                        # default: 1 citra/kelas dari train
+python scripts/visualisasi_augmentasi.py --n-variasi 6 --dpi 300
+python scripts/visualisasi_augmentasi.py --data-root data/processed/dataset_b
+```
+
+Pipeline diambil langsung dari `build_transforms()` (`data.py`), jadi selalu
+sama dengan augmentasi saat training (ikut berubah bila `STRONG_AUG` diubah).
+Pada gambar per tahap, flip ditampilkan dalam keadaan aktif (p=1) agar efeknya
+terlihat; saat training tetap p=0.5.
+
+Keluaran → `laporan/gambar/agumentasi/`:
+
+| File | Isi |
+|---|---|
+| `<kelas>/00_asli.png`, `01_affine.png`, … | tiap tahap augmentasi, terpisah, tanpa teks |
+| `<kelas>/pipeline_01..N.png` | hasil pipeline lengkap (acak, seeded) |
+| `<kelas>_tahapan.png` | grid tahapan satu kelas |
+| `ringkasan_tahapan.png`, `ringkasan_pipeline.png` | gabungan 7 kelas |
+
+### Grad-CAM per kelas (prediksi benar & salah + confidence)
+
+```bash
+python scripts/gradcam_perkelas.py                              # 4 benar + 4 salah per kelas (test)
+python scripts/gradcam_perkelas.py --k 6 --pilih yakin          # confidence tertinggi
+python scripts/gradcam_perkelas.py --pilih ragu                 # confidence terendah
+python scripts/gradcam_perkelas.py --polos                      # + overlay tanpa teks
+python scripts/gradcam_perkelas.py --checkpoint artifacts/checkpoints/cloud_Versi01.pth --split val
+```
+
+Opsi penting: `--checkpoint` (default: `.pth` terbaru di `artifacts/checkpoints/`,
+selain `*_last.pth`), `--split test|val|train`, `--k` (jumlah sampel benar & salah
+per kelas), `--pilih acak|yakin|ragu` (default `acak`, seed 42), `--alpha`
+(transparansi heatmap), `--dpi`.
+
+Keluaran → `laporan/gambar/grad-map/`:
+
+| File | Isi |
+|---|---|
+| `<kelas>/benar/NN_<file>.png` | citra asli · Grad-CAM kelas prediksi · batang probabilitas 7 kelas |
+| `<kelas>/salah/NN_<file>.png` | sama + Grad-CAM **label asli** sebagai pembanding |
+| `<kelas>/<kelas>_benar.png`, `<kelas>_salah.png` | grid semua sampel kelas tsb |
+| `<kelas>/polos/` | (dengan `--polos`) citra & overlay tanpa teks |
+| `ringkasan_benar.png`, `ringkasan_salah.png` | 1 contoh per kelas |
+| `prediksi_<split>.csv` | prediksi + confidence + probabilitas tiap kelas untuk semua citra |
+| `ringkasan_perkelas.csv` | n, benar, salah, akurasi, rata-rata confidence per kelas |
+
+Warna judul: hijau = BENAR, merah = SALAH; batang biru = label asli.
+Grad-CAM diambil dari layer `norm5` (peta fitur 7×7 terakhir backbone DenseNet),
+sehingga hanya mencerminkan jalur CNN, bukan cabang CloudViT paralel.
 
 ## Catatan
 
